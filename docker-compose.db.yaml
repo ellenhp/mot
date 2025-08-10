@@ -1,0 +1,65 @@
+services:
+  postgis:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    ports:
+      - 55432:5432
+    environment:
+      - POSTGRES_DB=osm
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgis-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "su postgres -c 'pg_isready -d osm'"]
+      interval: 1s
+      timeout: 5s
+      start_period: 5s
+    networks:
+      - mvts-net
+
+  init_schema:
+    image: docker.io/alpine/psql
+    volumes:
+      - ./osm:/data:z
+    command: >
+      postgresql://postgres:password@postgis/osm -a -f /data/wof/init.sql
+    depends_on:
+      postgis:
+        condition: service_healthy
+    networks:
+      - mvts-net
+
+  ogr2ogr:
+    image: ghcr.io/osgeo/gdal:alpine-small-latest
+    # restart: on-failure
+    command: ["ogr2ogr", "-lco", "SCHEMA=wof", "-of", "PostgreSQL", "postgresql://postgres:password@postgis/osm", "-if", "SQLite", "/data/whosonfirst.db"]
+    volumes:
+      - ./osm:/data:ro
+    depends_on:
+      postgis:
+        condition: service_healthy
+      init_schema:
+        condition: service_completed_successfully
+    networks:
+      - mvts-net
+
+  extract_geom:
+    image: docker.io/alpine/psql
+    volumes:
+      - ./osm:/data:z
+    command: >
+      postgresql://postgres:password@postgis/osm -a -f /data/wof/extract_geom.sql
+    depends_on:
+      postgis:
+        condition: service_healthy
+      ogr2ogr:
+        condition: service_completed_successfully
+    networks:
+      - mvts-net
+volumes:
+  postgis-data:
+
+networks:
+  mvts-net:
+    driver: bridge

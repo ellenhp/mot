@@ -1,0 +1,4 @@
+*.osm.pbf
+*.db
+*.db-shm
+*.db-wal

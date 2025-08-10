@@ -1,0 +1,41 @@
+services:
+  osm2pgsql:
+    image: iboates/osm2pgsql:2.1.1
+    environment:
+       PGPASSWORD: "password"
+    volumes:
+      - ./osm:/data:z
+    command: >
+      osm2pgsql -d osm -U postgres -H postgis -P 5432 -O flex -S /data/osm2pgsql/style.lua -c /data/Seattle.osm.pbf
+    networks:
+      - mvts-net
+
+  consolidate_pois:
+    image: docker.io/alpine/psql
+    volumes:
+      - ./osm:/data:z
+    command: >
+      postgresql://postgres:password@postgis/osm -a -f /data/osm2pgsql/consolidate_pois.sql
+    depends_on:
+      osm2pgsql:
+        condition: service_completed_successfully
+    networks:
+      - mvts-net
+
+  martin:
+    image: ghcr.io/maplibre/martin
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgis/osm
+    ports:
+      - 3000:3000
+    command: ["--default-srid=4326"]
+    depends_on:
+      consolidate_pois:
+        condition: service_completed_successfully
+    networks:
+      - mvts-net
+
+networks:
+  mvts-net:
+    driver: bridge
