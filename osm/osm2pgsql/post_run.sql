@@ -24,3 +24,30 @@ CREATE TABLE IF NOT EXISTS wof_admins (
 );
 
 CREATE INDEX IF NOT EXISTS wof_admins_geom ON wof_admins USING GIST(geom);
+
+DROP TABLE IF EXISTS tiles;
+CREATE TABLE tiles (
+  idx INTEGER,
+  x INTEGER,
+  y INTEGER,
+  z INTEGER,
+  geom GEOMETRY(POLYGON, 4326)
+);
+
+WITH tile_coords AS
+(
+  select generate_series as idx, floor(generate_series/4096)::integer as x, (generate_series%4096)::integer as y from generate_series(0, 16777215)
+)
+INSERT INTO tiles (
+  idx, x, y, z, geom
+)
+SELECT
+  tile_coords.idx as idx,
+  tile_coords.x as x,
+  tile_coords.y as y,
+  12 as z,
+  ST_Transform(ST_TileEnvelope(12, tile_coords.x, tile_coords.y), 4326) as geom
+FROM tile_coords;
+
+CREATE INDEX IF NOT EXISTS tiles_geom ON tiles USING GIST(geom);
+
