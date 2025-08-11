@@ -1,0 +1,1 @@
+mod.rs is derived from the airmail project's `airmail_indexer/src/wof.rs`, reproduced here under the terms of Apache 2.0 and MIT.

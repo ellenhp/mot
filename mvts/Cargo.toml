@@ -6,5 +6,14 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.98"
 clap = { version = "4.5", features = ["derive"] }
-sqlx = { version = "0.8", features = ["postgres", "runtime-tokio"] }
+futures-util = "0.3.31"
+geo = "0.30.0"
+geo-types = "0.7.17"
+geozero = { version = "0.14.0", features = ["with-geo", "with-gpkg", "with-postgis-sqlx"] }
+num_cpus = "1.17.0"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.142"
+sqlx = { version = "0.8", features = ["postgres", "sqlite", "runtime-tokio"] }
 tokio = { version = "1.46", features = ["full"] }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"

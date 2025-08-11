@@ -1,6 +1,6 @@
 { pkgs ? import <nixpkgs> {} }:
 pkgs.mkShell {
-  nativeBuildInputs = with pkgs; [ rustc cargo cargo-typify gcc rustfmt clippy openssl pkg-config sqlx-cli tokio-console docker-compose ];
+  nativeBuildInputs = with pkgs; [ rustc cargo cargo-typify gcc rustfmt clippy openssl pkg-config sqlx-cli tokio-console docker-compose sqlite libspatialite ];
 
   # Certain Rust tools won't work without this
   # This can also be fixed by using oxalica/rust-overlay and specifying the rust-src extension
@@ -8,6 +8,7 @@ pkgs.mkShell {
   RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
 
   DATABASE_URL = "postgres:///osm";
+  LD_LIBRARY_PATH = "${pkgs.libspatialite}/lib";
 
-  shellHook = "export DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock";
+  shellHook = "export DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock; export HOST_USER=$USER";
 }

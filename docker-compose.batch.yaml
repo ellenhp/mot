@@ -1,0 +1,31 @@
+services:
+  osm2pgsql:
+    image: iboates/osm2pgsql:2.1.1
+    volumes:
+      - ./osm:/data:z
+      - /var/run/postgresql:/var/run/postgresql:z
+    environment:
+      - USER
+    command: >
+      osm2pgsql -d osm -U $USER -H /var/run/postgresql -O flex -S /data/osm2pgsql/style.lua -c /data/Seattle.osm.pbf
+    networks:
+      - mvts-net
+
+  consolidate_pois:
+    image: docker.io/alpine/psql
+    volumes:
+      - ./osm:/data:z
+      - /var/run/postgresql:/var/run/postgresql:z
+    environment:
+      - USER
+    command: >
+      postgresql:///osm?user=$USER -a -f /data/osm2pgsql/post_run.sql
+    depends_on:
+      osm2pgsql:
+        condition: service_completed_successfully
+    networks:
+      - mvts-net
+
+networks:
+  mvts-net:
+    driver: bridge
