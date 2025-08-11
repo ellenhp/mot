@@ -2,9 +2,8 @@ mod process_admin;
 mod sync_txn;
 mod whosonfirst;
 
-use std::{collections::HashMap, fs::File, path::PathBuf, sync::Mutex};
+use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::Mutex};
 
-use base64::{Engine, prelude::BASE64_STANDARD};
 use clap::Parser;
 use futures_util::TryStreamExt;
 use process_admin::ProcessAdmin;
@@ -12,7 +11,7 @@ use roaring::RoaringBitmap;
 use sqlx::{PgPool, query};
 use sync_txn::JOIN_HANDLES;
 use tokenizers::Tokenizer;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 #[derive(Debug, Parser)]
 #[command(name = "mvts", about = "MapLibre Vector Tile Search utilities")]
@@ -91,17 +90,17 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             }
-            let mut files = HashMap::new();
+            let mut files = vec![Vec::new(); tokenizer.get_vocab_size(false)];
             for (token, bitmap) in &bitmaps {
                 let mut buf = Vec::new();
                 let token_word = tokenizer.id_to_token(*token).unwrap();
                 debug!("Processing token {token_word}");
                 bitmap.serialize_into(&mut buf)?;
-                info!("Serialized size of {token_word}: {}", buf.len());
-                files.insert(token_word, BASE64_STANDARD.encode(&buf));
+                files[*token as usize] = buf;
             }
-            let writer = File::create(&generate_bitmaps.out)?;
-            serde_json::to_writer(&writer, &files)?;
+            let buf = rmp_serde::to_vec(&files)?;
+            let mut writer = File::create(&generate_bitmaps.out)?;
+            writer.write_all(&buf)?;
         }
     }
 

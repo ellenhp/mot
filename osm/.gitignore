@@ -3,4 +3,5 @@
 *.db-shm
 *.db-wal
 *.json
+*.rmp
 *.zst

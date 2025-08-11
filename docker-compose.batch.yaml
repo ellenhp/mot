@@ -7,7 +7,7 @@ services:
     environment:
       - USER
     command: >
-      osm2pgsql -d osm -U $USER -H /var/run/postgresql -O flex -S /data/osm2pgsql/style.lua -c /data/washington-latest.osm.pbf
+      osm2pgsql -d osm -U $USER -H /var/run/postgresql -O flex -S /data/osm2pgsql/style.lua -c /data/Seattle.osm.pbf
     networks:
       - mvts-net
 
