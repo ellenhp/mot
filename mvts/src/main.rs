@@ -2,16 +2,22 @@ mod process_admin;
 mod sync_txn;
 mod whosonfirst;
 
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, sync::Mutex};
-
 use clap::Parser;
 use futures_util::TryStreamExt;
 use process_admin::ProcessAdmin;
 use roaring::RoaringBitmap;
 use sqlx::{PgPool, query};
+use std::ops::BitXor;
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::{Cursor, Read, Write},
+    path::PathBuf,
+    sync::Mutex,
+};
 use sync_txn::JOIN_HANDLES;
 use tokenizers::Tokenizer;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Parser)]
 #[command(name = "mvts", about = "MapLibre Vector Tile Search utilities")]
@@ -24,6 +30,7 @@ struct Cli {
 enum Commands {
     LoadWof(LoadWhosOnFirst),
     GenerateBitmaps(GenerateBitmaps),
+    ReorderBitmaps(ReorderBitmaps),
 }
 
 #[derive(Debug, Parser)]
@@ -38,6 +45,14 @@ struct LoadWhosOnFirst {
 struct GenerateBitmaps {
     /// PostgreSQL connection string.
     db: String,
+    /// Where to write the bitmaps.
+    out: PathBuf,
+}
+
+#[derive(Debug, Parser)]
+struct ReorderBitmaps {
+    /// Where to read the bitmaps.
+    r#in: PathBuf,
     /// Where to write the bitmaps.
     out: PathBuf,
 }
@@ -100,6 +115,74 @@ async fn main() -> anyhow::Result<()> {
             }
             let buf = rmp_serde::to_vec(&files)?;
             let mut writer = File::create(&generate_bitmaps.out)?;
+            writer.write_all(&buf)?;
+        }
+        Commands::ReorderBitmaps(ReorderBitmaps { r#in, out }) => {
+            let mut input = Vec::new();
+            File::open(r#in)?.read_to_end(&mut input)?;
+            let input: Vec<Vec<u8>> = rmp_serde::from_slice(&input)?;
+            let bitmaps: HashMap<usize, RoaringBitmap> = input
+                .iter()
+                .map(|bitmap| {
+                    RoaringBitmap::deserialize_from(Cursor::new(bitmap))
+                        .unwrap_or(RoaringBitmap::new())
+                })
+                .enumerate()
+                .collect();
+            dbg!(
+                bitmaps
+                    .iter()
+                    .map(|(_, bitmap)| bitmap.serialized_size())
+                    .sum::<usize>()
+            );
+            let mut out_bitmaps = Vec::new();
+            let first = *bitmaps
+                .iter()
+                .min_by_key(|(_token, bitmap)| bitmap.serialized_size())
+                .unwrap()
+                .0;
+            let mut remaining: HashSet<usize> = bitmaps.keys().cloned().collect();
+            remaining.remove(&first);
+            out_bitmaps.push((first, bitmaps[&first].clone()));
+            let mut last = bitmaps[&first].clone();
+            while remaining.len() > 0 {
+                if remaining.len() % 100 == 0 {
+                    info!("Writing bitmap. Remaining: {}", remaining.len());
+                }
+                let last_clone = last.clone();
+                let (best, best_bitmap) = {
+                    let equals = bitmaps
+                        .iter()
+                        .filter(|(idx, _bitmap)| remaining.contains(idx))
+                        .filter(|(_idx, bitmap)| bitmap == &&last)
+                        .next();
+                    if let Some(equals) = equals {
+                        equals
+                    } else {
+                        bitmaps
+                            .iter()
+                            .filter(|(idx, _bitmap)| remaining.contains(idx))
+                            .min_by_key(|(_idx, bitmap)| {
+                                bitmap.bitxor(&last_clone).serialized_size()
+                            })
+                            .unwrap()
+                    }
+                };
+                out_bitmaps.push((*best, best_bitmap.bitxor(last)));
+                last = bitmaps[best].clone();
+                remaining.remove(best);
+            }
+            let out_serialized: HashMap<usize, Vec<u8>> = out_bitmaps
+                .iter()
+                .map(|(idx, bitmap)| {
+                    let mut buf = Vec::new();
+                    bitmap.serialize_into(&mut buf).unwrap();
+                    (*idx, buf)
+                })
+                .collect();
+
+            let buf = rmp_serde::to_vec(&out_serialized)?;
+            let mut writer = File::create(&out)?;
             writer.write_all(&buf)?;
         }
     }
