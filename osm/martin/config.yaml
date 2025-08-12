@@ -53,90 +53,68 @@ postgres:
   # Associative arrays of table sources
   tables:
     wof_admins:
-      # Table schema (required)
       schema: public
-
-      # Table name (required)
       table: wof_admins
-
-      # Geometry SRID (required)
       srid: 4326
-
-      # Geometry column name (required)
       geometry_column: geom
-
-      # Feature id column name
       id_column: id
-
-      # An integer specifying the minimum zoom level
       minzoom: 4
-
-      # An integer specifying the maximum zoom level. MUST be >= minzoom
       maxzoom: 12
-
-      # The maximum extent of available map tiles. Bounds MUST define an area
-      # covered by all zoom levels. The bounds are represented in WGS:84
-      # latitude and longitude values, in the order left, bottom, right, top.
-      # Values may be integers or floating point numbers.
       bounds: [ -180.0, -90.0, 180.0, 90.0 ]
-
-      # Tile extent in tile coordinate space
       extent: 65536
-
-      # Buffer distance in tile coordinate space to optionally clip geometries
       buffer: 1024
-
-      # Boolean to control if geometries should be clipped or encoded as is
       clip_geom: true
-
-      # Geometry type
       geometry_type: GEOMETRY
-
-      # List of columns, that should be encoded as tile properties (required)
       properties:
         admin_level: text
         names: text
 
     poi:
-      # Table schema (required)
       schema: public
-
-      # Table name (required)
       table: poi
-
-      # Geometry SRID (required)
       srid: 4326
-
-      # Geometry column name (required)
       geometry_column: geom
-
-      # An integer specifying the minimum zoom level
-      minzoom: 12
-
-      # An integer specifying the maximum zoom level. MUST be >= minzoom
+      minzoom: 10
       maxzoom: 12
-
-      # The maximum extent of available map tiles. Bounds MUST define an area
-      # covered by all zoom levels. The bounds are represented in WGS:84
-      # latitude and longitude values, in the order left, bottom, right, top.
-      # Values may be integers or floating point numbers.
       bounds: [ -180.0, -90.0, 180.0, 90.0 ]
-
-      # Tile extent in tile coordinate space
-      extent: 16384
-
-      # Buffer distance in tile coordinate space to optionally clip geometries
-      buffer: 64
-
-      # Boolean to control if geometries should be clipped or encoded as is
+      extent: 65536
+      buffer: 1024
       clip_geom: true
-
-      # Geometry type
       geometry_type: GEOMETRY
-
-      # List of columns, that should be encoded as tile properties (required)
       properties:
         node_id: int8
         way_id: int8
         tags: jsonb
 
+    roads:
+      schema: public
+      table: roads
+      srid: 4326
+      geometry_column: geom
+      minzoom: 10
+      maxzoom: 12
+      bounds: [ -180.0, -90.0, 180.0, 90.0 ]
+      extent: 65536
+      buffer: 1024
+      clip_geom: true
+      geometry_type: GEOMETRY
+      properties:
+        tags: jsonb
+        way_id: int8
+
+    intersections:
+      schema: public
+      table: intersections
+      srid: 4326
+      geometry_column: geom
+      minzoom: 10
+      maxzoom: 12
+      bounds: [ -180.0, -90.0, 180.0, 90.0 ]
+      extent: 65536
+      buffer: 1024
+      clip_geom: true
+      geometry_type: GEOMETRY
+      properties:
+        way_id: int8
+        transition_to_way: int8
+        restriction_tags: jsonb
