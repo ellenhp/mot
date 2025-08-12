@@ -1,13 +1,43 @@
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crate::{
     sync_txn::JOIN_HANDLES,
     whosonfirst::{PipWithGeometry, WhosOnFirst},
 };
-use anyhow::Ok;
-use sqlx::{Postgres, Transaction, query};
+use clap::Parser;
+use sqlx::{PgPool, Postgres, Transaction, query};
 use tokio::spawn;
-use tracing::info;
+use tracing::{debug, info};
+
+/// Command to load Who's on First data
+#[derive(Debug, Parser)]
+pub struct LoadWhosOnFirst {
+    /// PostgreSQL connection string.
+    pub db: String,
+    /// WhosOnFirst Spatialite database. If downloaded from geocode.earth, the filename should end in .spatial.db
+    pub wof: PathBuf,
+}
+
+/// Command struct for loading Who's on First data
+pub struct LoadWhosOnFirstCommand {
+    pub db: String,
+    pub wof: PathBuf,
+}
+
+impl LoadWhosOnFirstCommand {
+    pub async fn run(&self) -> Result<(), anyhow::Error> {
+        debug!("Loading Who's on First data");
+        let pool = PgPool::connect(&self.db).await?;
+        let wof = WhosOnFirst::new(&self.wof).await?;
+
+        let mut process_admin = ProcessAdmin::new(pool.begin().await?).await?;
+        wof.clone()
+            .for_polygon(async move |row| process_admin.process_admin(&wof, &row).await.unwrap())
+            .await?;
+        Ok(())
+    }
+}
 
 /// Horrifying hack to commit a transaction on drop, which we need because we use this in a `async move` closure.
 pub struct ProcessAdmin {
