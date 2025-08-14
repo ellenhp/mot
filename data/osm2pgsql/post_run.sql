@@ -27,33 +27,8 @@ CREATE TABLE IF NOT EXISTS wof_admins (
 
 CREATE INDEX IF NOT EXISTS wof_admins_geom ON wof_admins USING GIST(geom);
 
-DROP TABLE IF EXISTS tiles;
-CREATE TABLE tiles (
-  idx INTEGER,
-  x INTEGER,
-  y INTEGER,
-  z INTEGER,
-  geom GEOMETRY(POLYGON, 4326)
-);
-
-WITH tile_coords AS
-(
-  select generate_series as idx, floor(generate_series/4096)::integer as x, (generate_series%4096)::integer as y from generate_series(0, 16777215)
-)
-INSERT INTO tiles (
-  idx, x, y, z, geom
-)
-SELECT
-  tile_coords.idx as idx,
-  tile_coords.x as x,
-  tile_coords.y as y,
-  12 as z,
-  ST_Transform(ST_TileEnvelope(12, tile_coords.x, tile_coords.y), 4326) as geom
-FROM tile_coords;
-
-CREATE INDEX IF NOT EXISTS tiles_geom ON tiles USING GIST(geom);
-
-CREATE OR REPLACE VIEW edge_intersections
+DROP MATERIALIZED VIEW IF EXISTS edge_intersections;
+EXPLAIN ANALYZE CREATE MATERIALIZED VIEW edge_intersections
 AS (SELECT DISTINCT
     (ST_Dump(ST_Intersection(l1.geom,l2.geom))).geom AS geom,
     l1.way_id AS way_id,
@@ -61,13 +36,13 @@ AS (SELECT DISTINCT
     FROM roads AS l1
     INNER JOIN roads AS l2 ON ST_Intersects(l2.geom, l1.geom)
     WHERE l1.way_id <> l2.way_id
-);
+) WITH DATA;
 
-CREATE OR REPLACE VIEW edge_transitions
+DROP MATERIALIZED VIEW IF EXISTS edge_transitions;
+EXPLAIN ANALYZE CREATE MATERIALIZED VIEW edge_transitions
 AS (SELECT DISTINCT
     ST_Transform(intersections.geom, 4326) AS intersection_geom,
     ST_Length(ST_LineSubstring(roads.geom, 0.0, ST_LineLocatePoint(roads.geom, intersections.geom))::geography) AS distance_along_way,
-    ST_Length(ST_LineSubstring(roads2.geom, 0.0, ST_LineLocatePoint(roads2.geom, intersections.geom))::geography) AS transition_to_distance_along_way,
     intersections.way_id AS way_id,
     intersections.transition_to_way AS transition_to_way,
     roads.tags AS way_tags,
