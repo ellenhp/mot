@@ -48,7 +48,7 @@ postgres:
   # 'calc' - compute table geometry bounds on startup.
   # 'quick' - same as 'calc', but the calculation will be aborted if it takes more than 5 seconds.
   # 'skip' - do not compute table geometry bounds on startup.
-  auto_bounds: quick
+  auto_bounds: calc
 
   # Associative arrays of table sources
   tables:
@@ -58,10 +58,9 @@ postgres:
       srid: 4326
       geometry_column: geom
       id_column: id
-      minzoom: 4
-      maxzoom: 12
-      bounds: [ -180.0, -90.0, 180.0, 90.0 ]
-      extent: 65536
+      minzoom: 14
+      maxzoom: 14
+      extent: 4096
       buffer: 1024
       clip_geom: true
       geometry_type: GEOMETRY
@@ -74,33 +73,17 @@ postgres:
       table: poi
       srid: 4326
       geometry_column: geom
+      id_column: id
       minzoom: 10
-      maxzoom: 12
-      bounds: [ -180.0, -90.0, 180.0, 90.0 ]
-      extent: 65536
-      buffer: 1024
+      maxzoom: 14
+      extent: 16384
+      buffer: 512
       clip_geom: true
       geometry_type: GEOMETRY
       properties:
+        way_id: int8
         node_id: int8
-        way_id: int8
         tags: jsonb
-
-    roads:
-      schema: public
-      table: roads
-      srid: 4326
-      geometry_column: geom
-      minzoom: 10
-      maxzoom: 12
-      bounds: [ -180.0, -90.0, 180.0, 90.0 ]
-      extent: 65536
-      buffer: 1024
-      clip_geom: true
-      geometry_type: GEOMETRY
-      properties:
-        tags: jsonb
-        way_id: int8
 
     intersections:
       schema: public
@@ -109,7 +92,6 @@ postgres:
       geometry_column: geom
       minzoom: 10
       maxzoom: 12
-      bounds: [ -180.0, -90.0, 180.0, 90.0 ]
       extent: 65536
       buffer: 1024
       clip_geom: true

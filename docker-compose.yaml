@@ -5,7 +5,7 @@ services:
     environment:
       - USER
     volumes:
-      - ./osm:/data:z
+      - ./data:/data:z
       - /var/run/postgresql:/var/run/postgresql:z
     ports:
       - 3000:3000

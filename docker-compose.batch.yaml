@@ -2,7 +2,7 @@ services:
   osm2pgsql:
     image: iboates/osm2pgsql:2.1.1
     volumes:
-      - ./osm:/data:z
+      - ./data:/data:z
       - /var/run/postgresql:/var/run/postgresql:z
     environment:
       - USER
@@ -14,7 +14,7 @@ services:
   consolidate_pois:
     image: docker.io/alpine/psql
     volumes:
-      - ./osm:/data:z
+      - ./data:/data:z
       - /var/run/postgresql:/var/run/postgresql:z
     environment:
       - USER
