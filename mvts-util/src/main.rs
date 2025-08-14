@@ -1,15 +1,9 @@
-mod generate_bitmaps;
 mod process_admin;
-mod query_bitmaps;
-mod reorder_bitmaps;
 mod sync_txn;
 mod whosonfirst;
 
 use clap::Parser;
-use generate_bitmaps::GenerateBitmapsCommand;
 use process_admin::{LoadWhosOnFirst, LoadWhosOnFirstCommand};
-use query_bitmaps::QueryBitmaps;
-use reorder_bitmaps::ReorderBitmapsCommand;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use sync_txn::JOIN_HANDLES;
@@ -24,9 +18,6 @@ struct Cli {
 #[derive(Debug, Parser)]
 enum Commands {
     LoadWof(LoadWhosOnFirst),
-    GenerateBitmaps(GenerateBitmaps),
-    ReorderBitmaps(ReorderBitmaps),
-    QueryBitmaps(QueryBitmaps),
 }
 
 #[derive(Debug, Parser)]
@@ -59,18 +50,6 @@ async fn main() -> anyhow::Result<()> {
             };
             command.run().await?;
         }
-        Commands::GenerateBitmaps(generate_bitmaps) => {
-            let command = GenerateBitmapsCommand {
-                db: generate_bitmaps.db,
-                out: generate_bitmaps.out,
-            };
-            command.run().await?;
-        }
-        Commands::ReorderBitmaps(ReorderBitmaps { r#in, out }) => {
-            let command = ReorderBitmapsCommand { r#in, out };
-            command.run().await?;
-        }
-        Commands::QueryBitmaps(query_bitmaps) => query_bitmaps.query()?,
     }
 
     let handles = JOIN_HANDLES.get_or_init(|| Mutex::new(Vec::new()));
