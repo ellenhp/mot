@@ -261,7 +261,7 @@ function osm2pgsql.process_way(object)
     if clean_tags(object.tags) then
         return
     end
-    if not object.is_closed and is_roadway(object.tags) then
+    if is_roadway(object.tags) then
         local row = {
             tags = object.tags,
             geom = object:as_linestring()

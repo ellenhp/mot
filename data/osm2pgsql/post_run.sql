@@ -43,6 +43,7 @@ EXPLAIN ANALYZE CREATE MATERIALIZED VIEW edge_transitions
 AS (SELECT DISTINCT
     ST_Transform(intersections.geom, 4326) AS intersection_geom,
     ST_Length(ST_LineSubstring(roads.geom, 0.0, ST_LineLocatePoint(roads.geom, intersections.geom))::geography) AS distance_along_way,
+    ST_Length(ST_LineSubstring(roads2.geom, 0.0, ST_LineLocatePoint(roads2.geom, intersections.geom))::geography) AS transition_to_distance_along_way,
     intersections.way_id AS way_id,
     intersections.transition_to_way AS transition_to_way,
     roads.tags AS way_tags,
@@ -61,6 +62,7 @@ CREATE TABLE intersections (
     way_id BIGINT,
     transition_to_way BIGINT,
     distance_along_way REAL,
+    transition_to_distance_along_way REAL,
     restriction_tags JSONB,
     geom GEOMETRY(Point, 4326)
 );
@@ -70,6 +72,7 @@ INSERT INTO intersections (
     way_id,
     transition_to_way,
     distance_along_way,
+    transition_to_distance_along_way,
     restriction_tags,
     geom
 )
@@ -77,6 +80,7 @@ SELECT
     way_id,
     transition_to_way,
     distance_along_way,
+    transition_to_distance_along_way,
     restriction_tags,
     intersection_geom
 FROM edge_transitions;

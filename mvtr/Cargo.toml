@@ -1,0 +1,13 @@
+[package]
+name = "mvtr"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+geo = "0.30.0"
+anyhow = "1.0"
+thiserror = "1.0"
+mvt-reader = "2.1.0"
+evmap = "10.0.2"

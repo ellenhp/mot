@@ -91,7 +91,7 @@ postgres:
       srid: 4326
       geometry_column: geom
       minzoom: 10
-      maxzoom: 12
+      maxzoom: 14
       extent: 65536
       buffer: 1024
       clip_geom: true
@@ -99,4 +99,21 @@ postgres:
       properties:
         way_id: int8
         transition_to_way: int8
+        distance_along_way: float
+        transition_to_distance_along_way: float
         restriction_tags: jsonb
+
+    roads:
+      schema: public
+      table: roads
+      srid: 4326
+      geometry_column: geom
+      minzoom: 10
+      maxzoom: 14
+      extent: 65536
+      buffer: 1024
+      clip_geom: true
+      geometry_type: GEOMETRY
+      properties:
+        way_id: int8
+        tags: jsonb
