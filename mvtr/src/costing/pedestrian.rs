@@ -16,7 +16,10 @@ pub fn pedestrian_costing_model(pedestrian_speed_m_s: f64) -> Box<dyn CostingMod
                 || tags.tag_is("sidewalk:left", "separate")
                 || tags.tag_is("sidewalk:right", "separate");
             let is_arterial = tags.tag_in("highway", &["secondary", "primary"]);
-            let is_highway = tags.tag_in("highway", &["motorway", "trunk"]);
+            let is_highway = tags.tag_in(
+                "highway",
+                &["motorway", "trunk", "motorway_link", "trunk_link"],
+            );
 
             // Most-preferred.
             if is_footpath {
@@ -27,15 +30,16 @@ pub fn pedestrian_costing_model(pedestrian_speed_m_s: f64) -> Box<dyn CostingMod
                 cost.add_flat_penalty(ElapsedTime::from_seconds(30));
                 cost.add_penalty_ppm(0.2.into());
             }
-            // Slightly discourage use of a road if we don't know for sure that it has a sidewalk.
             if !has_sidewalk {
-                // What the hell are you even doing on a highway.
                 if is_highway {
+                    // What the hell are you even doing on a highway.
                     cost.add_flat_penalty(ElapsedTime::from_seconds(120));
                     cost.add_penalty_ppm(2.0.into());
+                } else {
+                    // Slightly discourage use of a road if we don't know for sure that it has a sidewalk.
+                    cost.add_flat_penalty(ElapsedTime::from_seconds(10));
+                    cost.add_penalty_ppm(0.1.into());
                 }
-                cost.add_flat_penalty(ElapsedTime::from_seconds(10));
-                cost.add_penalty_ppm(0.1.into());
             }
 
             // Slightly discourage the use of arterials, primarily for noise reasons.
