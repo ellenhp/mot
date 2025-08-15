@@ -6,7 +6,7 @@ use std::{
 
 use mvt_reader::feature;
 
-use crate::costing::{CostingModel, RoutingCost, WayCoster};
+use crate::costing::{CostingModel, RoutingCost, Tags, WayCoster};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WayId(u64);
@@ -120,6 +120,7 @@ impl Graph {
                         _ => continue,
                     };
                 }
+                let tags = Tags::from_hashmap(tags);
                 let way_cost = self.costing_model.cost_way(&tags);
                 self.ways_write
                     .lock()
@@ -296,5 +297,18 @@ mod test {
             .search_djikstra(super::WayId(1173831634), 0, super::WayId(1172841584), 0)
             .expect("Couldn't find a route.");
         assert_eq!(cost.distance().mm(), 325_931);
+    }
+
+    #[test]
+    fn search_fremont() {
+        let costing_model = pedestrian_costing_model(1.4);
+        let graph = Graph::new(costing_model);
+        graph
+            .ingest_tile(include_bytes!("../testdata/tile2.pbf").to_vec())
+            .expect("Failed to ingest tile");
+        let cost = graph
+            .search_djikstra(super::WayId(671949014), 0, super::WayId(980366562), 0)
+            .expect("Couldn't find a route.");
+        assert_eq!(cost.distance().mm(), 1_996_587);
     }
 }

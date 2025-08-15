@@ -31,8 +31,16 @@ impl Add for TravelledDistance {
 pub struct ElapsedTime(pub(super) u64);
 
 impl ElapsedTime {
-    pub fn ms(&self) -> u64 {
+    pub fn millis(&self) -> u64 {
         self.0
+    }
+
+    pub fn from_millis(millis: u64) -> ElapsedTime {
+        ElapsedTime(millis)
+    }
+
+    pub fn from_seconds(seconds: u64) -> ElapsedTime {
+        ElapsedTime(seconds * 1000)
     }
 
     pub fn zero() -> ElapsedTime {
@@ -126,5 +134,11 @@ impl Mul<PartsPerMillion> for ElapsedTime {
             return ElapsedTime::zero();
         }
         ElapsedTime(elapsed_nanoseconds / 1_000_000)
+    }
+}
+
+impl From<f64> for PartsPerMillion {
+    fn from(value: f64) -> Self {
+        Self((value * 1_000_000.0).round() as u32)
     }
 }

@@ -1,13 +1,12 @@
-use std::collections::HashMap;
-
 use super::{
-    CostingModel, Direction, RoutingCost, WayCoster,
-    units::{PartsPerMillion, TravelSpeed},
+    CostingModel, Direction, RoutingCost, Tags, WayCoster,
+    units::{ElapsedTime, PartsPerMillion, TravelSpeed},
 };
 
 pub struct WayCost {
     speed: TravelSpeed,
     penalty_ppm: PartsPerMillion,
+    flat_penalty: ElapsedTime,
 }
 
 impl WayCost {
@@ -15,34 +14,33 @@ impl WayCost {
         WayCost {
             speed,
             penalty_ppm: PartsPerMillion::of(0),
+            flat_penalty: ElapsedTime::zero(),
         }
     }
-    pub fn with_speed_limit(&self, speed: TravelSpeed) -> WayCost {
-        WayCost {
-            speed: self.speed.min(speed),
-            penalty_ppm: self.penalty_ppm,
-        }
+    pub fn limit_speed(&mut self, speed: TravelSpeed) {
+        self.speed = self.speed.min(speed);
     }
 
-    pub fn add_penalty_ppm(&self, penalty: PartsPerMillion) -> WayCost {
-        WayCost {
-            speed: self.speed,
-            penalty_ppm: self.penalty_ppm + penalty,
-        }
+    pub fn add_penalty_ppm(&mut self, penalty: PartsPerMillion) {
+        self.penalty_ppm = self.penalty_ppm + penalty;
+    }
+
+    pub fn add_flat_penalty(&mut self, flat_penalty: ElapsedTime) {
+        self.flat_penalty = self.flat_penalty + flat_penalty;
     }
 }
 
 pub struct BaseCostingModel<
-    CostWayFn: Fn(Direction, &HashMap<String, String>) -> Option<WayCost>,
-    IntersectionFn: Fn(&HashMap<String, String>, &[&HashMap<String, String>]) -> Option<RoutingCost>,
+    CostWayFn: Fn(Direction, &Tags) -> Option<WayCost>,
+    IntersectionFn: Fn(&Tags, &[&Tags]) -> Option<RoutingCost>,
 > {
     speed_fn: CostWayFn,
     intersection_fn: IntersectionFn,
 }
 
 impl<
-    CostWayFn: Fn(Direction, &HashMap<String, String>) -> Option<WayCost>,
-    IntersectionFn: Fn(&HashMap<String, String>, &[&HashMap<String, String>]) -> Option<RoutingCost>,
+    CostWayFn: Fn(Direction, &Tags) -> Option<WayCost>,
+    IntersectionFn: Fn(&Tags, &[&Tags]) -> Option<RoutingCost>,
 > BaseCostingModel<CostWayFn, IntersectionFn>
 {
     pub fn new(
@@ -57,19 +55,15 @@ impl<
 }
 
 impl<
-    CostWayFn: Fn(Direction, &HashMap<String, String>) -> Option<WayCost>,
-    IntersectionFn: Fn(&HashMap<String, String>, &[&HashMap<String, String>]) -> Option<RoutingCost>,
+    CostWayFn: Fn(Direction, &Tags) -> Option<WayCost>,
+    IntersectionFn: Fn(&Tags, &[&Tags]) -> Option<RoutingCost>,
 > CostingModel for BaseCostingModel<CostWayFn, IntersectionFn>
 {
-    fn cost_intersection(
-        &self,
-        tags: &HashMap<String, String>,
-        others: &[&HashMap<String, String>],
-    ) -> Option<RoutingCost> {
+    fn cost_intersection(&self, tags: &Tags, others: &[&Tags]) -> Option<RoutingCost> {
         (self.intersection_fn)(tags, others)
     }
 
-    fn cost_way(&self, tags: &HashMap<String, String>) -> WayCoster {
+    fn cost_way(&self, tags: &Tags) -> WayCoster {
         let way_cost_forward = (self.speed_fn)(Direction::Forward, tags);
         let way_cost_reverse = (self.speed_fn)(Direction::Reverse, tags);
         WayCoster {

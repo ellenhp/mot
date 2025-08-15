@@ -158,11 +158,35 @@ impl ShallowCopy for WayCoster {
 }
 
 pub trait CostingModel {
-    fn cost_intersection(
-        &self,
-        tags: &HashMap<String, String>,
-        others: &[&HashMap<String, String>],
-    ) -> Option<RoutingCost>;
+    fn cost_intersection(&self, tags: &Tags, others: &[&Tags]) -> Option<RoutingCost>;
 
-    fn cost_way(&self, tags: &HashMap<String, String>) -> WayCoster;
+    fn cost_way(&self, tags: &Tags) -> WayCoster;
+}
+
+pub struct Tags {
+    map: HashMap<String, String>,
+}
+
+impl Tags {
+    pub(super) fn from_hashmap(map: HashMap<String, String>) -> Tags {
+        Tags { map }
+    }
+
+    pub fn tag_in(&self, key: &str, options: &[&str]) -> bool {
+        for actual in self.map.get(key).iter().flat_map(|key| key.split(';')) {
+            if options.iter().any(|val| actual == *val) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn tag_is(&self, key: &str, val: &str) -> bool {
+        for actual in self.map.get(key).iter().flat_map(|key| key.split(';')) {
+            if actual == val {
+                return true;
+            }
+        }
+        false
+    }
 }
