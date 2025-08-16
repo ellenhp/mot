@@ -1,5 +1,7 @@
+use crate::graph::WayTransition;
+
 use super::{
-    RoutingCost, Tags,
+    Tags, TransitionCostResult, TransitionToCost,
     base::{BaseCostingModel, WayCost},
     units::{Direction, ElapsedTime, TravelSpeed},
 };
@@ -8,7 +10,7 @@ pub fn pedestrian_costing_model(
     pedestrian_speed_m_s: f64,
 ) -> BaseCostingModel<
     impl Fn(Direction, &Tags) -> Option<WayCost>,
-    impl Fn(&Tags, &[&Tags]) -> Option<RoutingCost>,
+    impl Fn(&Tags, &[TransitionToCost]) -> TransitionCostResult,
 > {
     BaseCostingModel::new(
         move |_direction, tags| {
@@ -53,6 +55,12 @@ pub fn pedestrian_costing_model(
             }
             Some(cost)
         },
-        |_tags, _other_intersection_tags| Some(RoutingCost::zero()),
+        |_tags, transitions_to_cost| {
+            let transitions: Vec<WayTransition> = transitions_to_cost
+                .iter()
+                .map(|transition_to_cost| transition_to_cost.way_transition.clone())
+                .collect();
+            TransitionCostResult::zero(&transitions)
+        },
     )
 }

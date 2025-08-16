@@ -8,8 +8,8 @@ pub enum Direction {
     Reverse,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct TravelledDistance(pub(super) u64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TravelledDistance(pub(crate) u64);
 
 impl TravelledDistance {
     pub fn mm(&self) -> u64 {
@@ -29,7 +29,7 @@ impl Add for TravelledDistance {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ElapsedTime(pub(super) u64);
 
 impl ElapsedTime {

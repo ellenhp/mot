@@ -1,5 +1,5 @@
 use super::{
-    CostingModel, Direction, RoutingCost, Tags, WayCoster,
+    CostingModel, Direction, Tags, TransitionCostResult, TransitionToCost, WayCoster,
     units::{ElapsedTime, PartsPerMillion, TravelSpeed},
 };
 
@@ -32,7 +32,7 @@ impl WayCost {
 
 pub struct BaseCostingModel<
     CostWayFn: Fn(Direction, &Tags) -> Option<WayCost>,
-    IntersectionFn: Fn(&Tags, &[&Tags]) -> Option<RoutingCost>,
+    IntersectionFn: Fn(&Tags, &[TransitionToCost]) -> TransitionCostResult,
 > {
     speed_fn: CostWayFn,
     intersection_fn: IntersectionFn,
@@ -40,7 +40,7 @@ pub struct BaseCostingModel<
 
 impl<
     CostWayFn: Fn(Direction, &Tags) -> Option<WayCost>,
-    IntersectionFn: Fn(&Tags, &[&Tags]) -> Option<RoutingCost>,
+    IntersectionFn: Fn(&Tags, &[TransitionToCost]) -> TransitionCostResult,
 > BaseCostingModel<CostWayFn, IntersectionFn>
 {
     pub fn new(
@@ -56,11 +56,15 @@ impl<
 
 impl<
     CostWayFn: Fn(Direction, &Tags) -> Option<WayCost>,
-    IntersectionFn: Fn(&Tags, &[&Tags]) -> Option<RoutingCost>,
+    IntersectionFn: Fn(&Tags, &[TransitionToCost]) -> TransitionCostResult,
 > CostingModel for BaseCostingModel<CostWayFn, IntersectionFn>
 {
-    fn cost_intersection(&self, tags: &Tags, others: &[&Tags]) -> Option<RoutingCost> {
-        (self.intersection_fn)(tags, others)
+    fn cost_intersection(
+        &self,
+        current_way_tags: &Tags,
+        intersecting_way_tags_plus_restrictions: &[TransitionToCost],
+    ) -> TransitionCostResult {
+        (self.intersection_fn)(current_way_tags, intersecting_way_tags_plus_restrictions)
     }
 
     fn cost_way(&self, tags: &Tags) -> WayCoster {

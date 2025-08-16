@@ -8,7 +8,9 @@ use evmap::ShallowCopy;
 use serde::{Deserialize, Serialize};
 use units::{Direction, ElapsedTime, PartsPerMillion, TravelSpeed, TravelledDistance};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+use crate::graph::WayTransition;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RoutingCost {
     cost_millis: ElapsedTime,
     actual_millis: ElapsedTime,
@@ -83,6 +85,39 @@ impl RoutingCost {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TransitionToCost<'a> {
+    pub(crate) way_transition: WayTransition,
+    pub(crate) from_way_tags: &'a Tags,
+    pub(crate) to_way_tags: &'a Tags,
+    pub(crate) intersection_tags: &'a Tags,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct TransitionCostResult {
+    pub(crate) transition_costs: HashMap<WayTransition, RoutingCost>,
+    pub(crate) continue_cost: Option<RoutingCost>,
+}
+
+impl TransitionCostResult {
+    pub fn impassable() -> TransitionCostResult {
+        TransitionCostResult {
+            transition_costs: HashMap::new(),
+            continue_cost: None,
+        }
+    }
+
+    pub(crate) fn zero(transitions: &[WayTransition]) -> TransitionCostResult {
+        TransitionCostResult {
+            transition_costs: transitions
+                .iter()
+                .map(|transition| (*transition, RoutingCost::zero()))
+                .collect(),
+            continue_cost: Some(RoutingCost::zero()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct WayCoster {
     speed_forward: Option<TravelSpeed>,
@@ -131,30 +166,18 @@ impl WayCoster {
 
     pub fn cost_way_segment(
         &self,
-        from_distance_along_way_mm: i32,
-        to_distance_along_way_mm: i32,
+        distance: TravelledDistance,
+        direction: Direction,
     ) -> Option<RoutingCost> {
-        let distance = TravelledDistance(
-            (from_distance_along_way_mm - to_distance_along_way_mm)
-                .saturating_abs()
-                .try_into()
-                .expect("Distance was negative after an `abs` call."),
-        );
-        let direction = if to_distance_along_way_mm < from_distance_along_way_mm {
-            Direction::Reverse
-        } else {
-            Direction::Forward
-        };
-
         let penalty_ppm = match direction {
             Direction::Forward => self.penalty_ppm_forward.unwrap_or_default(),
             Direction::Reverse => self.penalty_ppm_reverse.unwrap_or_default(),
         };
 
-        let time_ms = self.estimate_time_ms(distance, direction)?;
+        let travel_time_ms = self.estimate_time_ms(distance, direction)?;
         Some(RoutingCost {
-            cost_millis: time_ms + time_ms * penalty_ppm,
-            actual_millis: time_ms,
+            cost_millis: travel_time_ms + travel_time_ms * penalty_ppm,
+            actual_millis: travel_time_ms,
             distance_mm: distance,
         })
     }
@@ -167,12 +190,16 @@ impl ShallowCopy for WayCoster {
 }
 
 pub trait CostingModel {
-    fn cost_intersection(&self, tags: &Tags, others: &[&Tags]) -> Option<RoutingCost>;
+    fn cost_intersection(
+        &self,
+        current_way_tags: &Tags,
+        transitions_to_cost: &[TransitionToCost],
+    ) -> TransitionCostResult;
 
     fn cost_way(&self, tags: &Tags) -> WayCoster;
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tags {
     map: HashMap<String, String>,
 }
