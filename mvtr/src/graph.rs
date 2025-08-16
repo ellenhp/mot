@@ -72,6 +72,7 @@ impl evmap::ShallowCopy for CostedWayTransition {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct WayTransition {
+    from_way_id: WayId,
     distance_along_way_mm: i32,
     to_way_id: WayId,
     transition_to_distance_along_way_mm: i32,
@@ -122,6 +123,7 @@ pub struct SearchState {
     previous: usize,
     idx: usize,
     node: SearchNode,
+    via: SearchNode,
     cost: RoutingCost,
 }
 
@@ -259,6 +261,7 @@ impl Graph {
                     distance_along_way_mm,
                 };
                 let way_transition = WayTransition {
+                    from_way_id,
                     distance_along_way_mm,
                     transition_to_distance_along_way_mm: meters_to_mm_fixed(
                         transition_to_distance_along_way,
@@ -319,6 +322,7 @@ impl Graph {
                 if let Some(continue_cost) = intersection_costs.continue_cost {
                     let costed_way_transition = CostedWayTransition {
                         way_transition: WayTransition {
+                            from_way_id: search_node.way,
                             distance_along_way_mm: search_node.distance_along_way_mm,
                             to_way_id: search_node.way,
                             transition_to_distance_along_way_mm: search_node.distance_along_way_mm,
@@ -331,30 +335,6 @@ impl Graph {
                         .insert(search_node, costed_way_transition);
                 }
             }
-
-            // for (search_node, transition_group) in transition_groups {
-            //     let others_tags: Vec<Tags> = transition_group
-            //         .iter()
-            //         .enumerate()
-            //         .filter(|(other_idx, other_transition)| *other_idx != idx)
-            //         .map(|(_, transition)| transition.tags.clone())
-            //         .collect();
-
-            //     for (idx, annotated_transition) in transition_group.iter().enumerate() {
-            //         let others_tags: Vec<Tags> = transition_group
-            //             .iter()
-            //             .enumerate()
-            //             .filter(|(other_idx, other_transition)| *other_idx != idx)
-            //             .map(|(_, transition)| transition.tags.clone())
-            //             .collect();
-            //         let mut transition = annotated_transition.way_transition.clone();
-            //         transition.transition_cost = costing_model.cost_intersection(tags, others);
-            //         self.transitions_write
-            //             .lock()
-            //             .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
-            //             .insert(search_node, transition);
-            //     }
-            // }
         }
         // We want costing data to be available before the routing graph is because that way we can unwrap() costing access.
         self.ways_write
@@ -379,13 +359,15 @@ impl Graph {
         end: WayId,
         distance_along_end_mm: i32,
     ) -> Option<Vec<SearchState>> {
+        let first_node = SearchNode {
+            way: start,
+            distance_along_way_mm: distance_along_start_mm,
+        };
         let first_state = SearchState {
             previous: 0,
             idx: 0,
-            node: SearchNode {
-                way: start,
-                distance_along_way_mm: distance_along_start_mm,
-            },
+            node: first_node,
+            via: first_node,
             cost: RoutingCost::zero(),
         };
         let mut frontier = BinaryHeap::new();
@@ -397,13 +379,15 @@ impl Graph {
             if state.node.way == end && state.node.distance_along_way_mm == distance_along_end_mm {
                 return Some(self.unwind_route(&step_log, state.idx));
             }
-            let all_nodes: Vec<SearchNode> = self
+            let all_nodes: HashSet<SearchNode> = self
                 .nodes_read
                 .get(&state.node.way)
                 .iter()
                 .flatten()
                 .cloned()
                 .collect();
+
+            debug_assert!(all_nodes.iter().all(|node| node.way == state.node.way));
 
             let mut transition_groups = BTreeMap::new();
             for node in &all_nodes {
@@ -414,32 +398,75 @@ impl Graph {
                     .flatten()
                     .cloned()
                     .collect();
+                debug_assert!(
+                    transitions
+                        .iter()
+                        .all(|transition| transition.way_transition.from_way_id == state.node.way)
+                );
+                debug_assert!(
+                    transitions
+                        .iter()
+                        .all(|transition| transition.way_transition.distance_along_way_mm
+                            == node.distance_along_way_mm)
+                );
+                if node.distance_along_way_mm == state.node.distance_along_way_mm {
+                    debug_assert!(
+                        transitions
+                            .iter()
+                            .all(|transition| transition.way_transition.distance_along_way_mm
+                                == state.node.distance_along_way_mm)
+                    );
+                }
+                debug_assert!(!transition_groups.contains_key(&node));
                 transition_groups.insert(node, transitions);
             }
-            let first_transition_group_after: Option<Vec<CostedWayTransition>> = transition_groups
+
+            debug_assert!(
+                transition_groups
+                    .keys()
+                    .all(|key| key.way == state.node.way)
+            );
+
+            let identity_transitions_group = transition_groups
+                .iter()
+                .filter(|(node, _)| node == &&&state.node)
+                .map(|(k, v)| (**k, v.clone()))
+                .next();
+            let first_transition_group_after = transition_groups
                 .iter()
                 .filter(|(node, _)| node > &&&state.node)
-                .map(|(_, v)| v.clone())
+                .map(|(k, v)| (**k, v.clone()))
                 .next();
-            let first_transition_group_before: Option<Vec<CostedWayTransition>> = transition_groups
+            let first_transition_group_before = transition_groups
                 .iter()
-                .rev()
                 .filter(|(node, _)| node < &&&state.node)
-                .map(|(_, v)| v.clone())
-                .next();
+                .map(|(k, v)| (**k, v.clone()))
+                .last();
 
-            if let Some(group) = first_transition_group_after {
+            if let Some((via, group)) = identity_transitions_group {
                 self.process_transition_set(
                     &group,
+                    &via,
                     &state,
                     &mut frontier,
                     &mut costs,
                     &mut step_log,
                 );
             }
-            if let Some(group) = first_transition_group_before {
+            if let Some((via, group)) = first_transition_group_after {
                 self.process_transition_set(
                     &group,
+                    &via,
+                    &state,
+                    &mut frontier,
+                    &mut costs,
+                    &mut step_log,
+                );
+            }
+            if let Some((via, group)) = first_transition_group_before {
+                self.process_transition_set(
+                    &group,
+                    &via,
                     &state,
                     &mut frontier,
                     &mut costs,
@@ -453,42 +480,32 @@ impl Graph {
     fn process_transition_set(
         &self,
         transitions: &[CostedWayTransition],
+        via: &SearchNode,
         state: &SearchState,
         frontier: &mut BinaryHeap<SearchState>,
         costs: &mut HashMap<SearchNode, RoutingCost>,
         step_log: &mut Vec<SearchState>,
     ) {
-        let first_transition = if let Some(first_transition) = transitions.first() {
-            first_transition
-        } else {
-            tracing::warn!("Empty transition set.");
-            return;
-        };
         debug_assert!(
             transitions
                 .iter()
                 .all(|transition| transition.way_transition.distance_along_way_mm
-                    == first_transition.way_transition.distance_along_way_mm)
+                    == via.distance_along_way_mm)
+        );
+        debug_assert!(
+            transitions
+                .iter()
+                .all(|transition| transition.way_transition.from_way_id == via.way)
         );
 
-        // let next_nodes: Vec<SearchNode> = transitions
-        //     .iter()
-        //     .map(|transition| SearchNode {
-        //         way: WayId(transition.to_way_id),
-        //         distance_along_way_mm: transition.transition_to_distance_along_way_mm,
-        //     })
-        //     .collect();
-
-        let distance = TravelledDistance(
-            (state.node.distance_along_way_mm
-                - first_transition.way_transition.distance_along_way_mm)
+        let distance: TravelledDistance = TravelledDistance(
+            (state.node.distance_along_way_mm - via.distance_along_way_mm)
                 .saturating_abs()
                 .try_into()
                 .expect("Distance was negative after an `abs` call."),
         );
-        let direction = if state.node.distance_along_way_mm
-            < first_transition.way_transition.distance_along_way_mm
-        {
+        debug_assert_eq!(state.node.way, via.way);
+        let direction = if state.node.distance_along_way_mm < via.distance_along_way_mm {
             Direction::Forward
         } else {
             Direction::Reverse
@@ -522,6 +539,7 @@ impl Graph {
                 previous: state.idx,
                 idx: step_log.len(),
                 node: new_node,
+                via: *via,
                 cost: new_cost + transition.cost,
             };
 
@@ -556,7 +574,15 @@ impl Graph {
             }
             cursor = step.previous
         }
-        steps_reversed.into_iter().rev().collect()
+        let steps: Vec<SearchState> = steps_reversed.into_iter().rev().collect();
+        for window in steps.windows(2) {
+            assert_eq!(
+                (window[0].node.distance_along_way_mm - window[1].via.distance_along_way_mm).abs()
+                    as u64,
+                window[1].cost.distance().0 - window[0].cost.distance().0
+            );
+        }
+        steps
     }
 
     fn get_u64_property(
@@ -598,7 +624,6 @@ mod test {
 
     #[test]
     fn ingest_tile() {
-        tracing_subscriber::fmt().init();
         let costing_model = pedestrian_costing_model(1.4);
         let graph = Graph::new();
         let start = Instant::now();
@@ -616,7 +641,6 @@ mod test {
 
     #[test]
     fn search_basic() {
-        tracing_subscriber::fmt().init();
         let costing_model = pedestrian_costing_model(1.4);
         let graph = Graph::new();
         graph
@@ -639,7 +663,6 @@ mod test {
 
     #[test]
     fn search_fremont() {
-        tracing_subscriber::fmt().init();
         let costing_model = pedestrian_costing_model(1.4);
         let graph = Graph::new();
         graph
