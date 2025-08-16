@@ -140,7 +140,8 @@ pub fn ingest_tile(
     x: u32,
     y: u32,
     z: u32,
-    tile_data: &[u8],
+    tile_data_ways: &[u8],
+    tile_data_nodes: &[u8],
     cost_intersection: &js_sys::Function,
     cost_way: &js_sys::Function,
 ) -> Result<(), wasm_bindgen::JsError> {
@@ -156,7 +157,14 @@ pub fn ingest_tile(
 
     console::log_1(&JsValue::from_str("Ingesting tile"));
     graph
-        .ingest_tile(x, y, z, tile_data.to_vec(), &costing_model)
+        .ingest_tile(
+            x,
+            y,
+            z,
+            tile_data_ways.to_vec(),
+            tile_data_nodes.to_vec(),
+            &costing_model,
+        )
         .map_err(|err| JsError::new(&format!("Failed to ingest tile: {}", &err)))?;
 
     Ok(())

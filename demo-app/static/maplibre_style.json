@@ -7,11 +7,11 @@
   "sources": {
     "roads": {
       "type": "vector",
-      "url": "pmtiles://http://localhost:8080/seattle_roads.pmtiles"
+      "url": ""
     },
     "intersections": {
       "type": "vector",
-      "url": "pmtiles://http://localhost:8080/seattle_intersections.pmtiles"
+      "url": ""
     }
   },
   "layers": [
@@ -35,6 +35,10 @@
             [
               14,
               2
+            ],
+            [
+              18,
+              10
             ]
           ]
         }

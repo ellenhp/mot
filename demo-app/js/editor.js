@@ -12,7 +12,9 @@ var ready = false;
 var editor = ace.edit("editor");
 editor.setTheme("ace/theme/twilight");
 editor.setOptions({
-  fontSize: "13pt"
+  fontSize: "13pt",
+  tabSize: 2,
+  useSoftTabs: true
 });
 editor.session.setUseWorker(false)
 editor.session.setMode("ace/mode/javascript");
@@ -21,28 +23,33 @@ editor.addEventListener('change', async (delta) => {
   if (ready) {
     var source = map.getSource('polyline')
     var ghost = map.getSource('polyline_ghost')
-    if (source && ghost && (await source.getData()).coordinates.length > 0) {
+    if (source && ghost && (await source.getData())?.coordinates?.length > 0) {
       ghost.setData(await source.getData());
       source.setData({ type: "LineString", coordinates: [] });
     }
-    routingWorker.postMessage(editor.getValue());
+    routingWorker.postMessage({ costing_model: editor.getValue(), url: window.location.href });
   }
 })
 
 routingWorker.onmessage = (event) => {
-  if (event.data == null) {
-    routingWorker.postMessage(editor.getValue());
+  if (event.data === "ready") {
+    routingWorker.postMessage({ costing_model: editor.getValue(), url: window.location.href });
     return;
   }
   var source = map.getSource('polyline')
   var ghost = map.getSource('polyline_ghost')
   if (source && ghost) {
-    source.setData(event.data);
-    ghost.setData({ type: "LineString", coordinates: [] });
+    if (event.data) {
+      source.setData(event.data);
+      ghost.setData({ type: "LineString", coordinates: [] });
+    } else {
+      source.setData({ type: "LineString", coordinates: [] });
+      ghost.setData({ type: "LineString", coordinates: [] });
+    }
   } else {
     map.addSource('polyline', {
       type: 'geojson',
-      data: event.data
+      data: event.data ? event.data : { type: "LineString", coordinates: [] }
     });
     map.addLayer({
       "id": "polyline_casing",

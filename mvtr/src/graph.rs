@@ -259,7 +259,8 @@ impl Graph {
         x: u32,
         y: u32,
         z: u32,
-        mvt: Vec<u8>,
+        mvt_ways: Vec<u8>,
+        mvt_nodes: Vec<u8>,
         costing_model: &CM,
     ) -> anyhow::Result<()> {
         struct AnnotatedWayTransition<'a> {
@@ -269,24 +270,24 @@ impl Graph {
             intersection_tags: Tags,
         }
 
-        let reader = mvt_reader::Reader::new(mvt)
+        let reader_ways = mvt_reader::Reader::new(mvt_ways)
             .map_err(|err| anyhow::anyhow!("Could not create MVT reader {}", err))?;
-        let layers = reader
+        let layers_ways = reader_ways
             .get_layer_names()
             .map_err(|err| anyhow::anyhow!("Could not get MVT tile's layer list {}", err))?;
 
         let mut way_tags: HashMap<WayId, Tags> = HashMap::new();
-        if let Some((road_layer_id, _)) = layers
+        if let Some((road_layer_id, _)) = layers_ways
             .iter()
             .enumerate()
             .filter(|(_, layer)| layer.as_str() == "roads")
             .next()
         {
-            let features = reader
+            let features = reader_ways
                 .get_features(road_layer_id)
                 .map_err(|err| anyhow::anyhow!("Could not get MVT tile's road features {}", err))?;
 
-            let extent = reader
+            let extent = reader_ways
                 .get_layer_metadata()
                 .map_err(|err| anyhow::anyhow!("Could not get MVT tile's road metadata {}", err))?
                 [road_layer_id]
@@ -350,15 +351,23 @@ impl Graph {
                     .insert(way_id, polyline);
             }
         }
-        if let Some((intersection_layer_id, _)) = layers
+        let reader_nodes = mvt_reader::Reader::new(mvt_nodes)
+            .map_err(|err| anyhow::anyhow!("Could not create MVT reader {}", err))?;
+        let layers_nodes = reader_nodes
+            .get_layer_names()
+            .map_err(|err| anyhow::anyhow!("Could not get MVT tile's layer list {}", err))?;
+
+        if let Some((intersection_layer_id, _)) = layers_nodes
             .iter()
             .enumerate()
             .filter(|(_, layer)| layer.as_str() == "intersections")
             .next()
         {
-            let features = reader.get_features(intersection_layer_id).map_err(|err| {
-                anyhow::anyhow!("Could not get MVT tile's intersection features {}", err)
-            })?;
+            let features = reader_nodes
+                .get_features(intersection_layer_id)
+                .map_err(|err| {
+                    anyhow::anyhow!("Could not get MVT tile's intersection features {}", err)
+                })?;
 
             let mut transition_groups: HashMap<SearchNode, Vec<AnnotatedWayTransition>> =
                 HashMap::new();
@@ -839,6 +848,7 @@ mod test {
                 5721,
                 14,
                 include_bytes!("../testdata/tile.pbf").to_vec(),
+                include_bytes!("../testdata/tile.pbf").to_vec(),
                 &costing_model,
             )
             .expect("Failed to ingest tile");
@@ -854,6 +864,7 @@ mod test {
                 2625,
                 5721,
                 14,
+                include_bytes!("../testdata/tile.pbf").to_vec(),
                 include_bytes!("../testdata/tile.pbf").to_vec(),
                 &costing_model,
             )
@@ -879,6 +890,7 @@ mod test {
                 2623,
                 5718,
                 14,
+                include_bytes!("../testdata/tile2.pbf").to_vec(),
                 include_bytes!("../testdata/tile2.pbf").to_vec(),
                 &costing_model,
             )
