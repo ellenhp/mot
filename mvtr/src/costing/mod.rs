@@ -8,7 +8,7 @@ use evmap::ShallowCopy;
 use serde::{Deserialize, Serialize};
 use units::{Direction, ElapsedTime, PartsPerMillion, TravelSpeed, TravelledDistance};
 
-use crate::graph::WayTransition;
+use crate::graph::{WayId, WayTransition};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RoutingCost {
@@ -93,9 +93,29 @@ pub struct TransitionToCost<'a> {
     pub(crate) intersection_tags: &'a Tags,
 }
 
+impl<'a> TransitionToCost<'a> {
+    pub fn from_way_id(&'a self) -> WayId {
+        self.way_transition.from_way_id()
+    }
+
+    pub fn to_way_id(&'a self) -> WayId {
+        self.way_transition.to_way_id()
+    }
+
+    pub fn from_way_tags(&'a self) -> Tags {
+        self.from_way_tags.clone()
+    }
+    pub fn to_way_tags(&'a self) -> Tags {
+        self.to_way_tags.clone()
+    }
+    pub fn intersection_tags(&'a self) -> Tags {
+        self.intersection_tags.clone()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct TransitionCostResult {
-    pub(crate) transition_costs: HashMap<WayTransition, RoutingCost>,
+    pub(crate) transition_costs: HashMap<WayId, RoutingCost>,
     pub(crate) continue_cost: Option<RoutingCost>,
 }
 
@@ -107,11 +127,32 @@ impl TransitionCostResult {
         }
     }
 
+    pub fn from_transitions_and_costs_seconds(
+        transitions: &HashMap<WayId, f64>,
+        continuation_penalty: Option<f64>,
+    ) -> TransitionCostResult {
+        TransitionCostResult {
+            transition_costs: transitions
+                .iter()
+                .map(|(way_id, penalty_seconds)| {
+                    (
+                        *way_id,
+                        RoutingCost::zero()
+                            .with_penalty(ElapsedTime::from_seconds(*penalty_seconds)),
+                    )
+                })
+                .collect(),
+            continue_cost: continuation_penalty.map(|penalty_seconds| {
+                RoutingCost::zero().with_penalty(ElapsedTime::from_seconds(penalty_seconds))
+            }),
+        }
+    }
+
     pub(crate) fn zero(transitions: &[WayTransition]) -> TransitionCostResult {
         TransitionCostResult {
             transition_costs: transitions
                 .iter()
-                .map(|transition| (*transition, RoutingCost::zero()))
+                .map(|transition| (transition.to_way_id(), RoutingCost::zero()))
                 .collect(),
             continue_cost: Some(RoutingCost::zero()),
         }
@@ -225,5 +266,9 @@ impl Tags {
             }
         }
         false
+    }
+
+    pub fn to_hashmap(&self) -> HashMap<String, String> {
+        self.map.clone()
     }
 }

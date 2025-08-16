@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 
 [profile.release]
 lto = true
+opt-level = 's'
 
 [dependencies]
 wasm-bindgen = "0.2.100"
@@ -21,6 +22,7 @@ mvtr = { path = "../mvtr" }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 lazy_static = "1.5.0"
 js-sys = "0.3.77"
+tracing-wasm = "0.2.1"
 
 # The `web-sys` crate allows you to interact with the various browser APIs,
 # like the DOM.

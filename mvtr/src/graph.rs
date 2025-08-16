@@ -61,7 +61,7 @@ impl TileCoordinates {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 pub(crate) struct CostedWayTransition {
-    way_transition: WayTransition,
+    to_way_id: WayId,
     cost: RoutingCost,
 }
 
@@ -77,6 +77,21 @@ pub(crate) struct WayTransition {
     distance_along_way_mm: i32,
     to_way_id: WayId,
     transition_to_distance_along_way_mm: i32,
+}
+
+impl WayTransition {
+    pub fn from_way_id(&self) -> WayId {
+        self.from_way_id
+    }
+    pub fn distance_along_way_mm(&self) -> i32 {
+        self.distance_along_way_mm
+    }
+    pub fn to_way_id(&self) -> WayId {
+        self.to_way_id
+    }
+    pub fn transition_to_distance_along_way_mm(&self) -> i32 {
+        self.transition_to_distance_along_way_mm
+    }
 }
 
 impl PartialOrd for WayTransition {
@@ -100,6 +115,12 @@ impl PartialOrd for WayTransition {
 impl Ord for WayTransition {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.partial_cmp(other).unwrap()
+    }
+}
+
+impl ShallowCopy for WayTransition {
+    unsafe fn shallow_copy(&self) -> ManuallyDrop<Self> {
+        ManuallyDrop::new(*self)
     }
 }
 
@@ -144,17 +165,35 @@ impl Ord for SearchState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct SearchResult {
     encoded_polyline: String,
     cost: RoutingCost,
 }
 
+impl SearchResult {
+    pub fn encoded_polyline(&self) -> String {
+        self.encoded_polyline.clone()
+    }
+
+    pub fn route_distance_meters(&self) -> f64 {
+        self.cost.distance().mm() as f64 / 1000.0
+    }
+
+    pub fn route_cost_seconds(&self) -> f64 {
+        self.cost.elapsed_equivalent().millis() as f64 / 1000.0
+    }
+
+    pub fn route_duration_seconds(&self) -> f64 {
+        self.cost.elapsed_actual().millis() as f64 / 1000.0
+    }
+}
+
 pub struct Graph {
     nodes_read: evmap::ReadHandle<WayId, SearchNode>,
     nodes_write: Mutex<evmap::WriteHandle<WayId, SearchNode>>,
-    transitions_read: evmap::ReadHandle<SearchNode, CostedWayTransition>,
-    transitions_write: Mutex<evmap::WriteHandle<SearchNode, CostedWayTransition>>,
+    transitions_read: evmap::ReadHandle<SearchNode, (CostedWayTransition, WayTransition)>,
+    transitions_write: Mutex<evmap::WriteHandle<SearchNode, (CostedWayTransition, WayTransition)>>,
     ways_read: evmap::ReadHandle<WayId, WayCoster>,
     ways_write: Mutex<evmap::WriteHandle<WayId, WayCoster>>,
     geometry_read: evmap::ReadHandle<WayId, Vec<TileCoordinates>>,
@@ -177,6 +216,42 @@ impl Graph {
             geometry_read: gr,
             geometry_write: Mutex::new(gw),
         }
+    }
+
+    pub fn clear(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.ways_write
+            .lock()
+            .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
+            .purge();
+        self.geometry_write
+            .lock()
+            .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
+            .purge();
+        self.transitions_write
+            .lock()
+            .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
+            .purge();
+        self.nodes_write
+            .lock()
+            .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
+            .purge();
+        self.ways_write
+            .lock()
+            .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
+            .refresh();
+        self.geometry_write
+            .lock()
+            .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
+            .refresh();
+        self.transitions_write
+            .lock()
+            .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
+            .refresh();
+        self.nodes_write
+            .lock()
+            .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
+            .refresh();
+        Ok(())
     }
 
     pub fn ingest_tile<CM: CostingModel>(
@@ -327,15 +402,20 @@ impl Graph {
                     .insert(from_way_id, search_node);
 
                 // let tags =
-                let annotated_way_transition = AnnotatedWayTransition {
-                    way_transition,
-                    way_tags: way_tags
-                        .get(&from_way_id)
-                        .expect("Missing way tags for from_way"),
-                    other_way_tags: way_tags
-                        .get(&to_way_id)
-                        .expect("Missing way tags for from_way"),
-                    intersection_tags,
+                let annotated_way_transition = if let (Some(way_tags), Some(other_way_tags)) =
+                    (way_tags.get(&from_way_id), way_tags.get(&to_way_id))
+                {
+                    AnnotatedWayTransition {
+                        way_transition,
+                        way_tags: way_tags,
+                        other_way_tags: other_way_tags,
+                        intersection_tags,
+                    }
+                } else {
+                    tracing::warn!(
+                        "Missing way tags for one or more ways, while attempting to cost intersection"
+                    );
+                    continue;
                 };
 
                 if let Some(transitions) = transition_groups.get_mut(&search_node) {
@@ -346,6 +426,15 @@ impl Graph {
             }
 
             for (search_node, transition_group) in transition_groups {
+                let way_transition_lookup: HashMap<WayId, WayTransition> = transition_group
+                    .iter()
+                    .map(|transition| {
+                        (
+                            transition.way_transition.to_way_id.clone(),
+                            transition.way_transition,
+                        )
+                    })
+                    .collect();
                 let current_way_tags = way_tags.get(&search_node.way).expect("Missing way tags");
                 let intersecting_way_tags_plus_restrictions: Vec<TransitionToCost> =
                     transition_group
@@ -361,31 +450,44 @@ impl Graph {
                 let intersection_costs = costing_model
                     .cost_intersection(current_way_tags, &intersecting_way_tags_plus_restrictions);
 
-                for (way_transition, transition_cost) in &intersection_costs.transition_costs {
+                for (to_way_id, transition_cost) in &intersection_costs.transition_costs {
                     let costed_way_transition = CostedWayTransition {
-                        way_transition: *way_transition,
+                        to_way_id: *to_way_id,
                         cost: *transition_cost,
                     };
                     self.transitions_write
                         .lock()
                         .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
-                        .insert(search_node, costed_way_transition);
+                        .insert(
+                            search_node,
+                            (
+                                costed_way_transition,
+                                *way_transition_lookup.get(to_way_id).unwrap(),
+                            ),
+                        );
                 }
                 // Insert an identity transition to represent the cost interacting with the intersection and continuing along the same way.
                 if let Some(continue_cost) = intersection_costs.continue_cost {
                     let costed_way_transition = CostedWayTransition {
-                        way_transition: WayTransition {
-                            from_way_id: search_node.way,
-                            distance_along_way_mm: search_node.distance_along_way_mm,
-                            to_way_id: search_node.way,
-                            transition_to_distance_along_way_mm: search_node.distance_along_way_mm,
-                        },
+                        to_way_id: search_node.way,
                         cost: continue_cost,
                     };
                     self.transitions_write
                         .lock()
                         .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
-                        .insert(search_node, costed_way_transition);
+                        .insert(
+                            search_node,
+                            (
+                                costed_way_transition,
+                                WayTransition {
+                                    from_way_id: search_node.way,
+                                    distance_along_way_mm: search_node.distance_along_way_mm,
+                                    to_way_id: search_node.way,
+                                    transition_to_distance_along_way_mm: search_node
+                                        .distance_along_way_mm,
+                                },
+                            ),
+                        );
                 }
             }
         }
@@ -528,32 +630,13 @@ impl Graph {
 
             let mut transition_groups = BTreeMap::new();
             for node in &all_nodes {
-                let transitions: Vec<CostedWayTransition> = self
+                let transitions: Vec<(CostedWayTransition, WayTransition)> = self
                     .transitions_read
                     .get(node)
                     .iter()
                     .flatten()
                     .cloned()
                     .collect();
-                debug_assert!(
-                    transitions
-                        .iter()
-                        .all(|transition| transition.way_transition.from_way_id == state.node.way)
-                );
-                debug_assert!(
-                    transitions
-                        .iter()
-                        .all(|transition| transition.way_transition.distance_along_way_mm
-                            == node.distance_along_way_mm)
-                );
-                if node.distance_along_way_mm == state.node.distance_along_way_mm {
-                    debug_assert!(
-                        transitions
-                            .iter()
-                            .all(|transition| transition.way_transition.distance_along_way_mm
-                                == state.node.distance_along_way_mm)
-                    );
-                }
                 debug_assert!(!transition_groups.contains_key(&node));
                 transition_groups.insert(node, transitions);
             }
@@ -616,25 +699,13 @@ impl Graph {
 
     fn process_transition_set(
         &self,
-        transitions: &[CostedWayTransition],
+        costed_transitions: &[(CostedWayTransition, WayTransition)],
         via: &SearchNode,
         state: &SearchState,
         frontier: &mut BinaryHeap<SearchState>,
         costs: &mut HashMap<SearchNode, RoutingCost>,
         step_log: &mut Vec<SearchState>,
     ) {
-        debug_assert!(
-            transitions
-                .iter()
-                .all(|transition| transition.way_transition.distance_along_way_mm
-                    == via.distance_along_way_mm)
-        );
-        debug_assert!(
-            transitions
-                .iter()
-                .all(|transition| transition.way_transition.from_way_id == via.way)
-        );
-
         let distance: TravelledDistance = TravelledDistance(
             (state.node.distance_along_way_mm - via.distance_along_way_mm)
                 .saturating_abs()
@@ -663,12 +734,10 @@ impl Graph {
         // Apply the travel cost.
         let new_cost = state.cost + segment_cost;
 
-        for transition in transitions {
+        for (costed, transition) in costed_transitions {
             let new_node = SearchNode {
-                way: transition.way_transition.to_way_id,
-                distance_along_way_mm: transition
-                    .way_transition
-                    .transition_to_distance_along_way_mm,
+                way: transition.to_way_id,
+                distance_along_way_mm: transition.transition_to_distance_along_way_mm,
             };
 
             // Apply the transition cost.
@@ -677,7 +746,7 @@ impl Graph {
                 idx: step_log.len(),
                 node: new_node,
                 via: *via,
-                cost: new_cost + transition.cost,
+                cost: new_cost + costed.cost,
             };
 
             if let Some(best_cost_this_node) = costs.get_mut(&new_node) {

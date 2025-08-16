@@ -34,17 +34,17 @@ pub fn pedestrian_costing_model(
             }
             // Discourage usage of the main road if there's a separate sidewalk.
             if sidewalk_is_separate {
-                cost.add_flat_penalty(ElapsedTime::from_seconds(30));
+                cost.add_flat_penalty(ElapsedTime::from_seconds(30.0));
                 cost.add_penalty_ppm(0.2.into());
             }
             if !has_sidewalk {
                 if is_highway {
                     // What the hell are you even doing on a highway.
-                    cost.add_flat_penalty(ElapsedTime::from_seconds(120));
+                    cost.add_flat_penalty(ElapsedTime::from_seconds(120.0));
                     cost.add_penalty_ppm(2.0.into());
                 } else {
                     // Slightly discourage use of a road if we don't know for sure that it has a sidewalk.
-                    cost.add_flat_penalty(ElapsedTime::from_seconds(10));
+                    cost.add_flat_penalty(ElapsedTime::from_seconds(10.0));
                     cost.add_penalty_ppm(0.1.into());
                 }
             }

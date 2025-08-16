@@ -41,8 +41,8 @@ impl ElapsedTime {
         ElapsedTime(millis)
     }
 
-    pub fn from_seconds(seconds: u64) -> ElapsedTime {
-        ElapsedTime(seconds * 1000)
+    pub fn from_seconds(seconds: f64) -> ElapsedTime {
+        ElapsedTime((seconds * 1000.0) as u64)
     }
 
     pub fn zero() -> ElapsedTime {
@@ -109,6 +109,9 @@ pub struct PartsPerMillion(u32);
 impl PartsPerMillion {
     pub fn of(ppm: u32) -> PartsPerMillion {
         PartsPerMillion(ppm)
+    }
+    pub fn from_fraction(fraction: f64) -> PartsPerMillion {
+        PartsPerMillion::of((fraction * 1_000_000.0) as u32)
     }
 }
 

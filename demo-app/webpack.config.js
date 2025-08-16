@@ -6,6 +6,19 @@ const dist = path.resolve(__dirname, "dist");
 
 module.exports = {
   mode: "production",
+  module: {
+    rules: [
+      {
+        test: /\.css$/i,
+        use: ["style-loader", "css-loader"],
+      },
+    ],
+  },
+  performance: {
+    assetFilter: (asset) => {
+      return false;
+    }
+  },
   entry: {
     index: "./js/index.js"
   },

@@ -1,0 +1,67 @@
+{
+  "version": 8,
+  "name": "Empty Style",
+  "metadata": {
+    "maputnik:renderer": "mlgljs"
+  },
+  "sources": {
+    "roads": {
+      "type": "vector",
+      "url": "pmtiles://http://localhost:8080/seattle_roads.pmtiles"
+    },
+    "intersections": {
+      "type": "vector",
+      "url": "pmtiles://http://localhost:8080/seattle_intersections.pmtiles"
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background"
+    },
+    {
+      "id": "roads",
+      "type": "line",
+      "source": "roads",
+      "source-layer": "roads",
+      "paint": {
+        "line-color": "rgba(192, 192, 192, 1)",
+        "line-width": {
+          "stops": [
+            [
+              10,
+              1
+            ],
+            [
+              14,
+              2
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "intersections",
+      "type": "circle",
+      "source": "intersections",
+      "source-layer": "intersections",
+      "minzoom": 14,
+      "paint": {
+        "circle-color": "rgba(0, 136, 255, 1)",
+        "circle-radius": {
+          "stops": [
+            [
+              14,
+              2
+            ],
+            [
+              20,
+              10
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "id": "1hoi0i8"
+}

@@ -90,9 +90,9 @@ postgres:
       table: intersections
       srid: 4326
       geometry_column: geom
-      minzoom: 10
+      minzoom: 14
       maxzoom: 14
-      extent: 65536
+      extent: 4096
       buffer: 1024
       clip_geom: true
       geometry_type: GEOMETRY
@@ -110,7 +110,7 @@ postgres:
       geometry_column: geom
       minzoom: 10
       maxzoom: 14
-      extent: 65536
+      extent: 4096
       buffer: 1024
       clip_geom: true
       geometry_type: GEOMETRY
