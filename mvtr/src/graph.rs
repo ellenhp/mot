@@ -6,6 +6,7 @@ use std::{
 };
 
 use evmap::ShallowCopy;
+use geo::{Haversine, InterpolateLine, LineLocatePoint, Point};
 use mvt_reader::feature;
 use serde::{Deserialize, Serialize};
 
@@ -48,13 +49,13 @@ impl TileCoordinates {
         geo::Rect::new(northwest.0, southeast.0)
     }
 
-    pub fn to_lat_lng(&self) -> geo::Point {
+    pub fn to_lat_lng(&self) -> geo::Coord {
         let envelope = self.tile_envelope();
         let x_frac = self.tile_x as f64 / self.extent as f64;
-        let y_frac = self.tile_y as f64 / self.extent as f64;
+        let y_frac = 1.0 - self.tile_y as f64 / self.extent as f64;
         let x = envelope.min().x + x_frac * envelope.width();
         let y = envelope.min().y + y_frac * envelope.height();
-        geo::Point::new(x, y)
+        geo::Coord { x, y }
     }
 }
 
@@ -119,7 +120,7 @@ impl ShallowCopy for SearchNode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SearchState {
+struct SearchState {
     previous: usize,
     idx: usize,
     node: SearchNode,
@@ -143,6 +144,12 @@ impl Ord for SearchState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SearchResult {
+    encoded_polyline: String,
+    cost: RoutingCost,
+}
+
 pub struct Graph {
     nodes_read: evmap::ReadHandle<WayId, SearchNode>,
     nodes_write: Mutex<evmap::WriteHandle<WayId, SearchNode>>,
@@ -150,6 +157,8 @@ pub struct Graph {
     transitions_write: Mutex<evmap::WriteHandle<SearchNode, CostedWayTransition>>,
     ways_read: evmap::ReadHandle<WayId, WayCoster>,
     ways_write: Mutex<evmap::WriteHandle<WayId, WayCoster>>,
+    geometry_read: evmap::ReadHandle<WayId, Vec<TileCoordinates>>,
+    geometry_write: Mutex<evmap::WriteHandle<WayId, Vec<TileCoordinates>>>,
 }
 
 impl Graph {
@@ -157,6 +166,7 @@ impl Graph {
         let (nr, nw) = evmap::new();
         let (tr, tw) = evmap::new();
         let (wr, ww) = evmap::new();
+        let (gr, gw) = evmap::new();
         Graph {
             nodes_read: nr,
             nodes_write: Mutex::new(nw),
@@ -164,14 +174,16 @@ impl Graph {
             transitions_write: Mutex::new(tw),
             ways_read: wr,
             ways_write: Mutex::new(ww),
+            geometry_read: gr,
+            geometry_write: Mutex::new(gw),
         }
     }
 
     pub fn ingest_tile<CM: CostingModel>(
         &self,
-        _x: u32,
-        _y: u32,
-        _z: u32,
+        x: u32,
+        y: u32,
+        z: u32,
         mvt: Vec<u8>,
         costing_model: &CM,
     ) -> anyhow::Result<()> {
@@ -199,6 +211,12 @@ impl Graph {
                 .get_features(road_layer_id)
                 .map_err(|err| anyhow::anyhow!("Could not get MVT tile's road features {}", err))?;
 
+            let extent = reader
+                .get_layer_metadata()
+                .map_err(|err| anyhow::anyhow!("Could not get MVT tile's road metadata {}", err))?
+                [road_layer_id]
+                .extent;
+
             for feature in &features {
                 let _props_default = HashMap::new();
                 let properties = feature.properties.as_ref().unwrap_or(&_props_default);
@@ -220,6 +238,41 @@ impl Graph {
                     .lock()
                     .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
                     .insert(way_id, way_cost);
+
+                let geometry = match &feature.geometry {
+                    geo::Geometry::LineString(line_string) => line_string.clone(),
+                    geo::Geometry::MultiLineString(multi_line_string) => {
+                        if multi_line_string.0.len() > 1 {
+                            tracing::warn!("Multiple linestrings found");
+                            continue;
+                        }
+                        if let Some(linestring) = multi_line_string.0.first() {
+                            linestring.clone()
+                        } else {
+                            tracing::warn!("Zero linestrings found");
+                            continue;
+                        }
+                    }
+                    _ => {
+                        tracing::warn!("Way geometry was not linestring or multilinestring");
+                        continue;
+                    }
+                };
+                let mut polyline = Vec::new();
+                for coord in &geometry.0 {
+                    polyline.push(TileCoordinates {
+                        x,
+                        y,
+                        z,
+                        extent,
+                        tile_x: coord.x as i32,
+                        tile_y: coord.y as i32,
+                    });
+                }
+                self.geometry_write
+                    .lock()
+                    .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
+                    .insert(way_id, polyline);
             }
         }
         if let Some((intersection_layer_id, _)) = layers
@@ -341,6 +394,10 @@ impl Graph {
             .lock()
             .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
             .refresh();
+        self.geometry_write
+            .lock()
+            .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
+            .refresh();
         self.transitions_write
             .lock()
             .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
@@ -352,7 +409,87 @@ impl Graph {
         Ok(())
     }
 
+    pub fn get_polyline(&self, way: &WayId) -> Option<geo::LineString> {
+        let geometry_guard = self.geometry_read.get_one(way)?;
+        Some(
+            geometry_guard
+                .iter()
+                .map(|coords| coords.to_lat_lng())
+                .collect(),
+        )
+    }
+
     pub fn search_djikstra(
+        &self,
+        start: WayId,
+        distance_along_start_mm: i32,
+        end: WayId,
+        distance_along_end_mm: i32,
+    ) -> Option<SearchResult> {
+        let states =
+            self.search_djikstra_inner(start, distance_along_start_mm, end, distance_along_end_mm)?;
+        let cost = states.last()?.cost;
+
+        let mut route_polyline = Vec::new();
+
+        for window in states.windows(2) {
+            let state = window[0];
+
+            let node_linestring = self.get_polyline(&state.node.way)?;
+
+            let start_point = Haversine
+                .point_at_distance_from_start(
+                    &node_linestring,
+                    window[0].node.distance_along_way_mm as f64 / 1000.0,
+                )
+                .expect("Failed to interpolate along way polyline.");
+            let end_point = Haversine
+                .point_at_distance_from_start(
+                    &node_linestring,
+                    window[1].via.distance_along_way_mm as f64 / 1000.0,
+                )
+                .expect("Failed to interpolate along way polyline.");
+
+            let line_fraction_1 = node_linestring.line_locate_point(&start_point).unwrap();
+            let line_fraction_2 = node_linestring.line_locate_point(&end_point).unwrap();
+            let start_line_fraction = line_fraction_1.min(line_fraction_2);
+            let end_line_fraction = line_fraction_1.max(line_fraction_2);
+
+            if route_polyline.last() != Some(&start_point) {
+                route_polyline.push(start_point);
+            }
+
+            let mut middle_points: Vec<Point> = node_linestring
+                .coords()
+                .map(|coord| Point(*coord))
+                .skip_while(|point| {
+                    node_linestring.line_locate_point(point).unwrap() < start_line_fraction
+                })
+                .take_while(|point| {
+                    node_linestring.line_locate_point(point).unwrap() < end_line_fraction
+                })
+                .collect();
+            if line_fraction_1 > line_fraction_2 {
+                middle_points.reverse();
+            }
+            route_polyline.extend_from_slice(&middle_points);
+
+            if route_polyline.last() != Some(&end_point) {
+                route_polyline.push(end_point);
+            }
+        }
+
+        Some(SearchResult {
+            cost,
+            encoded_polyline: polyline::encode_coordinates(
+                route_polyline.iter().map(|point| point.0),
+                5,
+            )
+            .unwrap(),
+        })
+    }
+
+    fn search_djikstra_inner(
         &self,
         start: WayId,
         distance_along_start_mm: i32,
@@ -657,8 +794,11 @@ mod test {
         let route = graph
             .search_djikstra(super::WayId(1173831634), 0, super::WayId(1172841584), 0)
             .expect("Couldn't find a route.");
-        dbg!(&route);
-        assert_eq!(route.last().unwrap().cost.distance().mm(), 325_931);
+        assert_eq!(route.cost.distance().mm(), 325_931);
+        assert_eq!(
+            route.encoded_polyline,
+            "}zraHdepiV???@?@?????BCN??CPAB??A?o@?IAgC???A@?????zF?????????F??@N???L???F????A???@vE???@???B"
+        );
     }
 
     #[test]
@@ -678,6 +818,10 @@ mod test {
             .search_djikstra(super::WayId(671949014), 0, super::WayId(980366562), 0)
             .expect("Couldn't find a route.");
         dbg!(&route);
-        assert_eq!(route.last().unwrap().cost.distance().mm(), 1_996_587);
+        assert_eq!(route.cost.distance().mm(), 1_996_587);
+        assert_eq!(
+            route.encoded_polyline,
+            "{hzaHfgyiV??HY??BK??AE??m@?cBA?N????K??@?V??????M?_C???mCA??{C???WD??Q[K[IUKIOE}B?KCKISQQG??oFC??????EiAGa@Oc@Wa@WSYS???oF????M??????iB?[????G???_C@?????uE???qE?A?{A???}C?A?kE?C?qD?M@?A?M???@Q???E????U@??o@???M????????kA???I?E???q@???E???E???E???kA??E???EA???E????C?AAAA?CAA?C??????E???Q???SA??[???G???e@A????AO??EC??EAAA??@A?A?C?eA?e@?I?EACAC??????AG??ACAG??AE??M_@??E???e@???I???Q????W?[?O??I?M?C?AAA?AC????????????K?A?C???sBA??E???G??????C?aE????A?A?AAAC?C?A???A@C@A@A@???"
+        );
     }
 }

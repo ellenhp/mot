@@ -422,6 +422,7 @@ dependencies = [
  "evmap",
  "geo",
  "mvt-reader",
+ "polyline",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -476,6 +477,15 @@ name = "pin-project-lite"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b3cff922bd51709b605d9ead9aa71031d81447142d828eb4a6eba76fe619f9b"
+
+[[package]]
+name = "polyline"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f19cbf429afe5a5186d4c6ca7b246b446b2d18919eefdddb521792d57c874f67"
+dependencies = [
+ "geo-types",
+]
 
 [[package]]
 name = "prettyplease"
