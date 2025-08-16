@@ -1,12 +1,14 @@
 use std::ops::{Add, Div, Mul};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
     Forward,
     Reverse,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TravelledDistance(pub(super) u64);
 
 impl TravelledDistance {
@@ -27,7 +29,7 @@ impl Add for TravelledDistance {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ElapsedTime(pub(super) u64);
 
 impl ElapsedTime {
@@ -56,7 +58,7 @@ impl Add for ElapsedTime {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct TravelSpeed {
     um_per_ms: u32,
 }
@@ -101,7 +103,7 @@ impl Div<TravelSpeed> for TravelledDistance {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PartsPerMillion(u32);
 
 impl PartsPerMillion {

@@ -1,11 +1,16 @@
 use super::{
-    CostingModel, RoutingCost,
+    RoutingCost, Tags,
     base::{BaseCostingModel, WayCost},
-    units::{ElapsedTime, TravelSpeed},
+    units::{Direction, ElapsedTime, TravelSpeed},
 };
 
-pub fn pedestrian_costing_model(pedestrian_speed_m_s: f64) -> Box<dyn CostingModel> {
-    Box::new(BaseCostingModel::new(
+pub fn pedestrian_costing_model(
+    pedestrian_speed_m_s: f64,
+) -> BaseCostingModel<
+    impl Fn(Direction, &Tags) -> Option<WayCost>,
+    impl Fn(&Tags, &[&Tags]) -> Option<RoutingCost>,
+> {
+    BaseCostingModel::new(
         move |_direction, tags| {
             let mut cost =
                 WayCost::from_speed(TravelSpeed::from_meters_per_second(pedestrian_speed_m_s));
@@ -49,5 +54,5 @@ pub fn pedestrian_costing_model(pedestrian_speed_m_s: f64) -> Box<dyn CostingMod
             Some(cost)
         },
         |_tags, _other_intersection_tags| Some(RoutingCost::zero()),
-    ))
+    )
 }

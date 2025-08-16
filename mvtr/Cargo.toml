@@ -12,3 +12,6 @@ thiserror = "1.0"
 mvt-reader = "2.1.0"
 evmap = "10.0.2"
 tracing = "0.1.41"
+
+[features]
+wasm = [ "mvt-reader/wasm" ]

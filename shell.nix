@@ -1,6 +1,6 @@
 { pkgs ? import <nixpkgs> {} }:
 pkgs.mkShell {
-  nativeBuildInputs = with pkgs; [ rustc cargo cargo-typify gcc rustfmt clippy openssl pkg-config sqlx-cli tokio-console docker-compose sqlite libspatialite protobuf ];
+  nativeBuildInputs = with pkgs; [ rustc cargo cargo-typify gcc rustfmt clippy openssl pkg-config sqlx-cli tokio-console docker-compose sqlite libspatialite protobuf wasm-pack lld nodejs_24 ];
 
   # Certain Rust tools won't work without this
   # This can also be fixed by using oxalica/rust-overlay and specifying the rust-src extension

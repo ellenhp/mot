@@ -11,8 +11,14 @@ use crate::costing::{CostingModel, RoutingCost, Tags, WayCoster};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WayId(u64);
 
+impl WayId {
+    pub fn from_id(id: u64) -> WayId {
+        WayId(id)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WayTransition {
+struct WayTransition {
     distance_along_way_mm: i32,
     to_way_id: u64,
     transition_to_distance_along_way_mm: i32,
@@ -29,7 +35,7 @@ fn meters_to_mm_fixed(meters: f32) -> i32 {
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SearchNode {
+struct SearchNode {
     way: WayId,
     distance_along_way_mm: i32,
 }
@@ -39,11 +45,10 @@ pub struct Graph {
     transitions_write: Mutex<evmap::WriteHandle<WayId, WayTransition>>,
     ways_read: evmap::ReadHandle<WayId, WayCoster>,
     ways_write: Mutex<evmap::WriteHandle<WayId, WayCoster>>,
-    costing_model: Box<dyn CostingModel>,
 }
 
 impl Graph {
-    pub fn new(costing_model: Box<dyn CostingModel>) -> Graph {
+    pub fn new() -> Graph {
         let (tr, tw) = evmap::new();
         let (wr, ww) = evmap::new();
         Graph {
@@ -51,11 +56,14 @@ impl Graph {
             transitions_write: Mutex::new(tw),
             ways_read: wr,
             ways_write: Mutex::new(ww),
-            costing_model,
         }
     }
 
-    pub fn ingest_tile(&self, mvt: Vec<u8>) -> anyhow::Result<()> {
+    pub fn ingest_tile<CM: CostingModel>(
+        &self,
+        mvt: Vec<u8>,
+        costing_model: &CM,
+    ) -> anyhow::Result<()> {
         let reader = mvt_reader::Reader::new(mvt)
             .map_err(|err| anyhow::anyhow!("Could not create MVT reader {}", err))?;
         let layers = reader
@@ -121,7 +129,7 @@ impl Graph {
                     };
                 }
                 let tags = Tags::from_hashmap(tags);
-                let way_cost = self.costing_model.cost_way(&tags);
+                let way_cost = costing_model.cost_way(&tags);
                 self.ways_write
                     .lock()
                     .map_err(|err| anyhow::anyhow!("Failed to lock mutex: {}", err))?
@@ -276,10 +284,13 @@ mod test {
     #[test]
     fn ingest_tile() {
         let costing_model = pedestrian_costing_model(1.4);
-        let graph = Graph::new(costing_model);
+        let graph = Graph::new();
         let start = Instant::now();
         graph
-            .ingest_tile(include_bytes!("../testdata/tile.pbf").to_vec())
+            .ingest_tile(
+                include_bytes!("../testdata/tile.pbf").to_vec(),
+                &costing_model,
+            )
             .expect("Failed to ingest tile");
         dbg!(start.elapsed());
     }
@@ -287,9 +298,12 @@ mod test {
     #[test]
     fn search_basic() {
         let costing_model = pedestrian_costing_model(1.4);
-        let graph = Graph::new(costing_model);
+        let graph = Graph::new();
         graph
-            .ingest_tile(include_bytes!("../testdata/tile.pbf").to_vec())
+            .ingest_tile(
+                include_bytes!("../testdata/tile.pbf").to_vec(),
+                &costing_model,
+            )
             .expect("Failed to ingest tile");
         // approx: https://maps.earth/directions/walk/-122.315503,47.6163794/-122.3126740,47.6153470
         // ----> 325.32080857991474 meters
@@ -302,9 +316,12 @@ mod test {
     #[test]
     fn search_fremont() {
         let costing_model = pedestrian_costing_model(1.4);
-        let graph = Graph::new(costing_model);
+        let graph = Graph::new();
         graph
-            .ingest_tile(include_bytes!("../testdata/tile2.pbf").to_vec())
+            .ingest_tile(
+                include_bytes!("../testdata/tile2.pbf").to_vec(),
+                &costing_model,
+            )
             .expect("Failed to ingest tile");
         let cost = graph
             .search_djikstra(super::WayId(671949014), 0, super::WayId(980366562), 0)

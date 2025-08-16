@@ -5,9 +5,10 @@ pub mod units;
 use std::{collections::HashMap, mem::ManuallyDrop, ops::Add};
 
 use evmap::ShallowCopy;
+use serde::{Deserialize, Serialize};
 use units::{Direction, ElapsedTime, PartsPerMillion, TravelSpeed, TravelledDistance};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingCost {
     cost_millis: ElapsedTime,
     actual_millis: ElapsedTime,
@@ -82,7 +83,7 @@ impl RoutingCost {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct WayCoster {
     speed_forward: Option<TravelSpeed>,
     speed_reverse: Option<TravelSpeed>,
@@ -91,6 +92,14 @@ pub struct WayCoster {
 }
 
 impl WayCoster {
+    pub fn impassable() -> WayCoster {
+        WayCoster {
+            speed_forward: None,
+            speed_reverse: None,
+            penalty_ppm_forward: None,
+            penalty_ppm_reverse: None,
+        }
+    }
     pub fn from_speeds(
         speed_forward: Option<TravelSpeed>,
         speed_reverse: Option<TravelSpeed>,
@@ -163,6 +172,7 @@ pub trait CostingModel {
     fn cost_way(&self, tags: &Tags) -> WayCoster;
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Tags {
     map: HashMap<String, String>,
 }
