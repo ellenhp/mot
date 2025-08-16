@@ -3,15 +3,13 @@ body {
 }
 
 #map {
-  height: 100%;
-  width: 100%;
+  height: 100vh;
+  width: 50vw;
   position: absolute;
-  x: 40%;
-  y: 0px;
   margin: 0;
   top: 0;
   bottom: 0;
-  left: 0;
+  left: 50vw;
   right: 0;
 }
 
@@ -19,7 +17,7 @@ body {
   position: absolute;
   x: 0px;
   y: 0px;
-  width: 40%;
+  width: 50vw;
   height: 100vh;
   margin: 0;
   top: 0;
