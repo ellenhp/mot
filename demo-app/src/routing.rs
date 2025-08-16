@@ -1,12 +1,15 @@
 use mvtr::{
     costing::{
-        CostingModel, Tags, TransitionCostResult, TransitionToCost, WayCoster,
+        CostingModel, TransitionCostResult, TransitionToCost, WayCoster,
         units::{PartsPerMillion, TravelSpeed},
     },
     graph::{Graph, WayId},
 };
 use serde::{Deserialize, Serialize};
-use std::sync::{Mutex, OnceLock};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+};
 use wasm_bindgen::prelude::*;
 use web_sys::console;
 
@@ -18,10 +21,10 @@ struct JsCostingModel<'a> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IntersectionCostInput {
     from_way_id: WayId,
-    from_way_tags: Tags,
-    to_way_tags: Tags,
+    from_way_tags: HashMap<String, String>,
+    to_way_tags: HashMap<String, String>,
     to_way_id: WayId,
-    intersection_tags: Tags,
+    intersection_tags: HashMap<String, String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IntersectionCostOutputLine {
@@ -45,21 +48,22 @@ struct JsWayCoster {
 impl<'a> CostingModel for JsCostingModel<'a> {
     fn cost_intersection(
         &self,
-        _current_way_tags: &mvtr::costing::Tags,
+        current_way_tags: &mvtr::costing::Tags,
         intersections_to_cost: &[TransitionToCost],
     ) -> TransitionCostResult {
         let intersections_to_cost: Vec<IntersectionCostInput> = intersections_to_cost
             .iter()
             .map(|transition| IntersectionCostInput {
                 from_way_id: transition.from_way_id(),
-                from_way_tags: transition.from_way_tags(),
+                from_way_tags: transition.from_way_tags().to_hashmap(),
                 to_way_id: transition.to_way_id(),
-                to_way_tags: transition.to_way_tags(),
-                intersection_tags: transition.intersection_tags(),
+                to_way_tags: transition.to_way_tags().to_hashmap(),
+                intersection_tags: transition.intersection_tags().to_hashmap(),
             })
             .collect();
-        match (self.cost_intersection).call1(
+        match (self.cost_intersection).call2(
             &JsValue::null(),
+            &serde_wasm_bindgen::to_value(&current_way_tags.to_hashmap()).unwrap(),
             &serde_wasm_bindgen::to_value(&intersections_to_cost).unwrap(),
         ) {
             Ok(cost) => {
@@ -202,6 +206,14 @@ pub fn search(
     );
     if response.is_none() {
         console::log_1(&JsValue::from_str("Couldn't find a way there"));
+    }
+    if let Some(response) = &response {
+        console::log_4(
+            &JsValue::from_str("Route cost, route duration, route distance: "),
+            &JsValue::from_f64(response.route_cost_seconds()),
+            &JsValue::from_f64(response.route_duration_seconds()),
+            &JsValue::from_f64(response.route_distance_meters()),
+        );
     }
     Ok(response.map(|result| result.encoded_polyline()))
 }
