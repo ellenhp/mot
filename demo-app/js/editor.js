@@ -17,8 +17,14 @@ editor.setOptions({
 editor.session.setUseWorker(false)
 editor.session.setMode("ace/mode/javascript");
 
-editor.addEventListener('change', (delta) => {
+editor.addEventListener('change', async (delta) => {
   if (ready) {
+    var source = map.getSource('polyline')
+    var ghost = map.getSource('polyline_ghost')
+    if (source && ghost && (await source.getData()).coordinates.length > 0) {
+      ghost.setData(await source.getData());
+      source.setData({ type: "LineString", coordinates: [] });
+    }
     routingWorker.postMessage(editor.getValue());
   }
 })
@@ -26,12 +32,13 @@ editor.addEventListener('change', (delta) => {
 routingWorker.onmessage = (event) => {
   if (event.data == null) {
     routingWorker.postMessage(editor.getValue());
-    ready = true
     return;
   }
   var source = map.getSource('polyline')
-  if (source) {
+  var ghost = map.getSource('polyline_ghost')
+  if (source && ghost) {
     source.setData(event.data);
+    ghost.setData({ type: "LineString", coordinates: [] });
   } else {
     map.addSource('polyline', {
       type: 'geojson',
@@ -77,6 +84,53 @@ routingWorker.onmessage = (event) => {
         }
       }
     });
+    map.addSource('polyline_ghost', {
+      type: 'geojson',
+      data: { type: "LineString", coordinates: [] }
+    });
+    map.addLayer({
+      "id": "polyline_ghost",
+      "type": "line",
+      "source": "polyline_ghost",
+      "paint": {
+        "line-color": "rgba(59, 94, 50, 1)",
+        "line-opacity": 0.5,
+        "line-width": {
+          "stops": [
+            [
+              10,
+              6
+            ],
+            [
+              14,
+              12
+            ]
+          ]
+        }
+      }
+    });
+    map.addLayer({
+      "id": "polyline_ghost_casing",
+      "type": "line",
+      "source": "polyline_ghost",
+      "paint": {
+        "line-color": "rgba(35, 173, 0, 1)",
+        "line-opacity": 0.5,
+        "line-width": {
+          "stops": [
+            [
+              10,
+              3
+            ],
+            [
+              14,
+              6
+            ]
+          ]
+        }
+      }
+    });
+    ready = true
 
   }
 };
