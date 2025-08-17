@@ -14,19 +14,31 @@
   <pre id="hover_properties"></pre>
 
   <pre id="editor">class CostingModel {
-  cost_intersection(transition_array) {
+  cost_intersection(current_way_tags, transition_array) {
     try {
       var costs = [];
+      var any_are_big = false;
+      var any_are_huge = false;
       for (let index = 0; index < transition_array.length; index++) {
         const element = transition_array[index];
+        let way_tags = element.to_way_tags;
         costs.push({
           to_way_id: element.to_way_id,
           penalty_seconds: 0.0
         });
+        any_are_big = any_are_big || (['primary', 'secondary'].includes(way_tags.get('highway')) && way_tags.get('bridge') === current_way_tags.get('bridge'))
+        any_are_huge = any_are_huge || (['trunk', 'motorway'].includes(way_tags.get('highway')) && way_tags.get('bridge') === current_way_tags.get('bridge'))
+      }
+      var continuation_penalty = 0.0;
+      if (any_are_big) {
+        continuation_penalty = continuation_penalty + 30;
+      }
+      if (any_are_huge) {
+        continuation_penalty = continuation_penalty + 120;
       }
       return {
         transition_costs: costs,
-        continue_penalty: 0.0,
+        continue_penalty: continuation_penalty,
       }
     } catch (err) {
       console.log(err)
@@ -39,10 +51,10 @@
     var base_speed = 1.4
     var penalty = 0
     if (['primary', 'secondary', 'tertiary'].includes(way.get('highway'))) {
-        penalty = 0.1
+      penalty = 0.05
     }
     if (['trunk', 'trunk_link', 'motorway', 'motorway_link'].includes(way.get('highway'))) {
-        base_speed = undefined;
+      base_speed = undefined;
     }
     return {
       speed_forward_meters_per_second: base_speed,

@@ -6,7 +6,7 @@ use std::{
 };
 
 use evmap::ShallowCopy;
-use geo::{Haversine, InterpolateLine, LineLocatePoint, Point};
+use geo::{ClosestPoint, Distance, Haversine, InterpolateLine, Length, LineLocatePoint, Point};
 use mvt_reader::feature;
 use serde::{Deserialize, Serialize};
 
@@ -530,6 +530,46 @@ impl Graph {
         )
     }
 
+    pub fn nearest_way(&self, coord: &geo::Coord) -> Option<(WayId, i32)> {
+        let mut best = f64::MAX;
+        let mut best_way_and_distance: Option<(WayId, i32)> = None;
+        let point = Point::new(coord.x, coord.y);
+        for (id, _) in self.geometry_read.read().unwrap().iter() {
+            let allowed_forward = self
+                .ways_read
+                .get_one(id)
+                .unwrap()
+                .cost_way_segment(TravelledDistance(1), Direction::Forward)
+                .is_some();
+            let allowed_reverse = self
+                .ways_read
+                .get_one(id)
+                .unwrap()
+                .cost_way_segment(TravelledDistance(1), Direction::Reverse)
+                .is_some();
+            if !allowed_forward && !allowed_reverse {
+                continue;
+            }
+            let polyline = self.get_polyline(id).unwrap();
+            let closest_point = match polyline.closest_point(&point) {
+                geo::Closest::Intersection(point) => point,
+                geo::Closest::SinglePoint(point) => point,
+                geo::Closest::Indeterminate => panic!(),
+            };
+            let closest_distance = Haversine.distance(point, closest_point);
+            if closest_distance.is_nan() {
+                tracing::warn!("{:?}, {:?}", point, closest_point);
+            }
+            if closest_distance < best {
+                let fraction = polyline.line_locate_point(&closest_point).unwrap();
+                let distance_meters = fraction * Haversine.length(&polyline);
+                best = closest_distance;
+                best_way_and_distance = Some((*id, (distance_meters * 1000.0) as i32));
+            }
+        }
+        best_way_and_distance
+    }
+
     pub fn search_djikstra(
         &self,
         start: WayId,
@@ -540,6 +580,8 @@ impl Graph {
         let states =
             self.search_djikstra_inner(start, distance_along_start_mm, end, distance_along_end_mm)?;
         let cost = states.last()?.cost;
+
+        dbg!(cost);
 
         let mut route_polyline = Vec::new();
 
@@ -683,6 +725,21 @@ impl Graph {
                 );
             }
             if let Some((via, group)) = first_transition_group_after {
+                if state.node.way == end {
+                    let first = group.first().unwrap();
+                    let current_distance_along_way = state.node.distance_along_way_mm;
+                    let next_transition_distance_along_way = first.1.distance_along_way_mm;
+
+                    self.check_finish_case(
+                        current_distance_along_way,
+                        distance_along_end_mm,
+                        next_transition_distance_along_way,
+                        &state,
+                        &step_log,
+                        &self.ways_read.get_one(&state.node.way).unwrap(),
+                        &mut frontier,
+                    );
+                }
                 self.process_transition_set(
                     &group,
                     &via,
@@ -693,6 +750,21 @@ impl Graph {
                 );
             }
             if let Some((via, group)) = first_transition_group_before {
+                if state.node.way == end {
+                    let current_distance_along_way = state.node.distance_along_way_mm;
+                    let next_transition_distance_along_way =
+                        group.first().unwrap().1.distance_along_way_mm;
+
+                    self.check_finish_case(
+                        current_distance_along_way,
+                        distance_along_end_mm,
+                        next_transition_distance_along_way,
+                        &state,
+                        &step_log,
+                        &self.ways_read.get_one(&state.node.way).unwrap(),
+                        &mut frontier,
+                    );
+                }
                 self.process_transition_set(
                     &group,
                     &via,
@@ -704,6 +776,46 @@ impl Graph {
             }
         }
         None
+    }
+
+    fn check_finish_case(
+        &self,
+        current_distance_along_way: i32,
+        end_distance_along_way: i32,
+        next_transition_distance_along_way: i32,
+        previous: &SearchState,
+        step_log: &[SearchState],
+        way_coster: &WayCoster,
+        frontier: &mut BinaryHeap<SearchState>,
+    ) -> Option<()> {
+        if (current_distance_along_way < end_distance_along_way
+            && end_distance_along_way < next_transition_distance_along_way)
+            || (current_distance_along_way > end_distance_along_way
+                && end_distance_along_way > next_transition_distance_along_way)
+        {
+            let new_state = SearchState {
+                previous: previous.idx,
+                idx: step_log.len(),
+                node: SearchNode {
+                    way: previous.node.way,
+                    distance_along_way_mm: end_distance_along_way,
+                },
+                via: previous.node.clone(),
+                cost: previous.cost
+                    + way_coster.cost_way_segment(
+                        TravelledDistance(
+                            (end_distance_along_way - current_distance_along_way).abs() as u64,
+                        ),
+                        if end_distance_along_way > current_distance_along_way {
+                            Direction::Forward
+                        } else {
+                            Direction::Reverse
+                        },
+                    )?,
+            };
+            frontier.push(new_state);
+        }
+        Some(())
     }
 
     fn process_transition_set(
@@ -833,6 +945,8 @@ impl Graph {
 mod test {
     use std::time::Instant;
 
+    use geo::Coord;
+
     use crate::costing::pedestrian::pedestrian_costing_model;
 
     use super::Graph;
@@ -871,13 +985,28 @@ mod test {
             .expect("Failed to ingest tile");
         // approx: https://maps.earth/directions/walk/-122.315503,47.6163794/-122.3126740,47.6153470
         // ----> 325.32080857991474 meters
+        let (from_way_id, from_way_distance) = graph
+            .nearest_way(&Coord {
+                x: -122.3126740,
+                y: 47.6153470,
+            })
+            .unwrap();
+        let (to_way_id, to_way_distance) = graph
+            .nearest_way(&Coord {
+                x: -122.315503,
+                y: 47.6163794,
+            })
+            .unwrap();
+
+        dbg!(from_way_id, from_way_distance, to_way_id, to_way_distance);
+
         let route = graph
-            .search_djikstra(super::WayId(1173831634), 0, super::WayId(1172841584), 0)
+            .search_djikstra(from_way_id, from_way_distance, to_way_id, to_way_distance)
             .expect("Couldn't find a route.");
-        assert_eq!(route.cost.distance().mm(), 325_931);
+        assert_eq!(route.cost.distance().mm(), 328_002);
         assert_eq!(
             route.encoded_polyline,
-            "}zraHdepiV???@?@?????BCN??CPAB??A?o@?IAgC???A@?????zF?????????F??@N???L???F????A???@vE???@???B"
+            "}zraHdepiV?@?@?????BCN??CPAB??A?o@?IAgC???A@?????zF?????????F??@N???L???F????A???@vE???@???B?D"
         );
     }
 

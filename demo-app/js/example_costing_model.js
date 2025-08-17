@@ -36,7 +36,7 @@ class CostingModel {
     var base_speed = 1.4
     var penalty = 0
     if (['primary', 'secondary', 'tertiary'].includes(way.get('highway'))) {
-      penalty = 0.0
+      penalty = 0.05
     }
     if (['trunk', 'trunk_link', 'motorway', 'motorway_link'].includes(way.get('highway'))) {
       base_speed = undefined;

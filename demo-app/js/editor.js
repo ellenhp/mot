@@ -1,5 +1,5 @@
 import * as ace from 'ace-builds';
-import map from './map'
+import { map, start, finish } from './map'
 
 require('ace-builds/src-noconflict/theme-twilight')
 require('ace-builds/src-noconflict/mode-javascript')
@@ -27,13 +27,17 @@ editor.addEventListener('change', async (delta) => {
       ghost.setData(await source.getData());
       source.setData({ type: "LineString", coordinates: [] });
     }
-    routingWorker.postMessage({ costing_model: editor.getValue(), url: window.location.href });
+    if (start && finish) {
+      routingWorker.postMessage({ costing_model: editor.getValue(), url: window.location.href, start: start.getLngLat(), finish: finish.getLngLat() });
+    }
   }
 })
 
 routingWorker.onmessage = (event) => {
   if (event.data === "ready") {
-    routingWorker.postMessage({ costing_model: editor.getValue(), url: window.location.href });
+    if (start && finish) {
+      routingWorker.postMessage({ costing_model: editor.getValue(), url: window.location.href, start: start.getLngLat(), finish: finish.getLngLat() });
+    }
     return;
   }
   var source = map.getSource('polyline')
@@ -142,3 +146,4 @@ routingWorker.onmessage = (event) => {
   }
 };
 
+export { routingWorker, editor };

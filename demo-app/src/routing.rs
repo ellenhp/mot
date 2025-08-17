@@ -96,7 +96,6 @@ impl<'a> CostingModel for JsCostingModel<'a> {
             }
             Err(err) => {
                 console::log_1(&err);
-                // panic!();
                 TransitionCostResult::impassable()
             }
         }
@@ -189,31 +188,41 @@ pub fn clear() -> Result<(), wasm_bindgen::JsError> {
 
 #[wasm_bindgen]
 pub fn search(
-    start_way: u64,
-    distance_along_start_way: f64,
-    end_way: u64,
-    distance_along_end_way: f64,
+    from_lon: f64,
+    from_lat: f64,
+    to_lon: f64,
+    to_lat: f64,
 ) -> Result<Option<String>, wasm_bindgen::JsError> {
     let graph_guard = GRAPH
         .lock()
         .map_err(|_err| JsError::new("Failed to lock mutex"))?;
     let graph = graph_guard.get_or_init(|| Graph::new());
-    let response = graph.search_djikstra(
-        WayId::from_id(start_way),
-        (distance_along_start_way * 1000.0) as i32,
-        WayId::from_id(end_way),
-        (distance_along_end_way * 1000.0) as i32,
-    );
-    if response.is_none() {
-        console::log_1(&JsValue::from_str("Couldn't find a way there"));
+
+    if let (Some((start_way, distance_along_start)), Some((end_way, distance_along_end))) = (
+        graph.nearest_way(&geo::Coord {
+            x: from_lon,
+            y: from_lat,
+        }),
+        graph.nearest_way(&geo::Coord {
+            x: to_lon,
+            y: to_lat,
+        }),
+    ) {
+        let response =
+            graph.search_djikstra(start_way, distance_along_start, end_way, distance_along_end);
+        if response.is_none() {
+            console::log_1(&JsValue::from_str("Couldn't find a way there"));
+        }
+        if let Some(response) = &response {
+            console::log_4(
+                &JsValue::from_str("Route cost, route duration, route distance: "),
+                &JsValue::from_f64(response.route_cost_seconds()),
+                &JsValue::from_f64(response.route_duration_seconds()),
+                &JsValue::from_f64(response.route_distance_meters()),
+            );
+        }
+        Ok(response.map(|result| result.encoded_polyline()))
+    } else {
+        Ok(None)
     }
-    if let Some(response) = &response {
-        console::log_4(
-            &JsValue::from_str("Route cost, route duration, route distance: "),
-            &JsValue::from_f64(response.route_cost_seconds()),
-            &JsValue::from_f64(response.route_duration_seconds()),
-            &JsValue::from_f64(response.route_distance_meters()),
-        );
-    }
-    Ok(response.map(|result| result.encoded_polyline()))
 }
