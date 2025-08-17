@@ -14,6 +14,12 @@ class CostingModel {
         } else {
           penalty = 20.0
         }
+        if (current_way_tags.get('bridge') !== way_tags.get('bridge')) {
+          continue;
+        }
+        if (current_way_tags.get('tunnel') !== way_tags.get('tunnel')) {
+          continue;
+        }
         costs.push({
           to_way_id: element.to_way_id,
           penalty_seconds: penalty
@@ -60,4 +66,3 @@ class CostingModel {
   }
 }
 new CostingModel()
-
