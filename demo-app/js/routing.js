@@ -41,6 +41,7 @@ const process_event = debounce(async (event) => {
 }, 1000);
 
 self.onmessage = async (event) => {
+  process_event.clear()
   await process_event(event)
 };
 

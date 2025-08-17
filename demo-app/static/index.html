@@ -21,11 +21,18 @@
       var any_are_huge = false;
       for (let index = 0; index < transition_array.length; index++) {
         const element = transition_array[index];
+        var penalty;
         let way_tags = element.to_way_tags;
+        let is_footpath = way_tags.get('highway') === "footway";
+        if (is_footpath) {
+          penalty = 10.0
+        } else {
+          penalty = 20.0
+        }
         costs.push({
           to_way_id: element.to_way_id,
-          penalty_seconds: 0.0
-        });
+          penalty_seconds: penalty
+        })
         any_are_big = any_are_big || (['primary', 'secondary'].includes(way_tags.get('highway')) && way_tags.get('bridge') === current_way_tags.get('bridge'))
         any_are_huge = any_are_huge || (['trunk', 'motorway'].includes(way_tags.get('highway')) && way_tags.get('bridge') === current_way_tags.get('bridge'))
       }
@@ -50,10 +57,13 @@
   cost_way(way) {
     var base_speed = 1.4
     var penalty = 0
-    if (['primary', 'secondary', 'tertiary'].includes(way.get('highway'))) {
+    if (way.get('highway') !== 'footway') {
       penalty = 0.05
     }
     if (['trunk', 'trunk_link', 'motorway', 'motorway_link'].includes(way.get('highway'))) {
+      base_speed = undefined;
+    }
+    if ([way.get('sidewalk'), way.get('sidewalk:left'), way.get('sidewalk:right'), way.get('sidewalk:both')].includes('separate')) {
       base_speed = undefined;
     }
     return {
@@ -65,7 +75,6 @@
   }
 }
 new CostingModel()
-
 </pre>
 
   <script src="index.js"></script>
